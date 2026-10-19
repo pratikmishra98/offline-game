@@ -3,7 +3,12 @@
   const world = document.getElementById("world-camera");
   const stick = document.getElementById("move-stick");
   const knob = document.getElementById("stick-knob");
+  const interactionButton = document.getElementById("interaction-action");
+  const interactionLabel = document.getElementById("interaction-label");
+  const interactionTarget = document.getElementById("interaction-target");
   const errorBox = document.getElementById("load-error");
+  const zoomCycleButton = document.getElementById("zoom-cycle");
+  const zoomLabel = zoomCycleButton;
   const ns = "http://www.w3.org/2000/svg";
   const input = { x: 0, y: 0, keys: new Set(), pointerId: null, destination: null };
   let mapData;
@@ -22,6 +27,13 @@
   let cameraReady = false;
   let previousTime = 0;
   let lastEntityOrder = "";
+  let lastPlayerTransform = "";
+  let lastCameraTransform = "";
+  let lastPromptUpdate = 0;
+  let interactionPromptItem = null;
+  let activeInteraction = null;
+  let zoomStep = 0;
+  const zoomFactors = [1, 0.75, 0.5];
 
   const svgElement = (name, attributes = {}) => {
     const element = document.createElementNS(ns, name);
@@ -73,7 +85,11 @@
     }));
   }
   const assetById = (id) => catalog.assets.find((asset) => asset.id === id);
-  const colliderOf = (item) => item.collider || assetById(item.assetId)?.collider || null;
+  const colliderOf = (item) => {
+    const asset = assetById(item.assetId);
+    if (item.collidable === false || (item.collidable == null && asset?.collidable === false)) return null;
+    return item.collider || asset?.collider || null;
+  };
   const frameFor = (index) => settings.player.sprite.frames[index];
 
   function showError(message) {
@@ -107,6 +123,8 @@
     } else {
       floor.append(rectElement(mapData.floor, "url(#floor-hall)"));
     }
+    const sectionLabels = svgElement("g", { id: "room-section-labels", "pointer-events": "none", "aria-label": "Room section labels" });
+    (mapData.labels || []).forEach((label) => drawSectionLabel(sectionLabels, label));
     const landscape = svgElement("g", { id: "campus-landscape", "aria-hidden": "true" });
     (mapData.landscape || []).forEach((item) => drawLandscape(landscape, item));
     entities = svgElement("g", { id: "world-entities" });
@@ -124,6 +142,19 @@
       if (rotation) image.setAttribute("transform", `rotate(${rotation} ${item.x + item.width / 2} ${item.y + item.height / 2})`);
       const title = svgElement("title"); title.textContent = item.name || asset.name; image.append(title);
       item._node = image;
+      const collider = colliderOf(item);
+      item._worldCollider = collider?.type === "polygon" && collider.points?.length >= 3
+        ? (() => {
+          const points = collider.points.map((point) => transformColliderPoint(item, point));
+          return {
+            points,
+            left: Math.min(...points.map((point) => point.x)),
+            top: Math.min(...points.map((point) => point.y)),
+            right: Math.max(...points.map((point) => point.x)),
+            bottom: Math.max(...points.map((point) => point.y))
+          };
+        })()
+        : null;
     });
     player = svgElement("g", { id: "player", "aria-label": "Explorer character" });
     player.append(svgElement("ellipse", { cx: 0, cy: -1, rx: 9, ry: 3.2, fill: "#1c2028", opacity: ".45" }));
@@ -159,12 +190,39 @@
       if (feature.type === "swing-door") drawSwingDoor(group, feature);
       depthWalls.push({ node: group, depthY: Number.NEGATIVE_INFINITY });
     });
-    world.append(floor, landscape, wallBack, entities, wallFront);
+    // Keep every map layer below the explorer. Wall back/front groups may still
+    // order walls among themselves, but neither may draw over the character.
+    world.append(floor, sectionLabels, landscape, wallBack, wallFront, entities);
     playerState = { ...mapData.playerSpawn, vx: 0, vy: 0, face: 1, walking: false, frameIndex: 0, frameClock: 0 };
     sortEntities(true);
     setFrame(frameFor(settings.player.sprite.idleFrame));
     setPlayerTransform();
     sortWallDepth(true);
+  }
+
+  function setZoomStep(step) {
+    zoomStep = (step + zoomFactors.length) % zoomFactors.length;
+    const label = `${zoomFactors[zoomStep]}×`;
+    zoomLabel.textContent = label;
+    zoomCycleButton.setAttribute("aria-label", `Change camera zoom, currently ${label}`);
+    zoomCycleButton.title = `Camera zoom ${label} · tap to cycle`;
+    cameraReady = false;
+  }
+
+  function drawSectionLabel(parent, label) {
+    const text = String(label.text || "").trim();
+    if (!text) return;
+    const width = Math.max(70, text.length * 6.7 + 18);
+    const group = svgElement("g", { transform: `translate(${label.x} ${label.y})`, class: "map-section-label" });
+    group.append(svgElement("path", { d: `M${width * .24} -14v12M${width * .76} -14v12`, fill: "none", stroke: "#4b3025", "stroke-width": 2.4, "stroke-linecap": "round" }));
+    [[width * .24, -14], [width * .76, -14]].forEach(([cx, cy]) => group.append(svgElement("circle", { cx, cy, r: 2.3, fill: "#e7bb7d", stroke: "#4b3025", "stroke-width": 1.2 })));
+    group.append(svgElement("rect", { x: 2, y: 3, width, height: 26, rx: 4, fill: "#38251f", opacity: ".35" }));
+    group.append(svgElement("rect", { x: 0, y: 0, width, height: 26, rx: 4, fill: "#a86e43", stroke: "#4b3025", "stroke-width": 2.5 }));
+    group.append(svgElement("rect", { x: 3, y: 3, width: width - 6, height: 20, rx: 2, fill: "none", stroke: "#d8a36a", "stroke-width": 1, opacity: ".9" }));
+    group.append(svgElement("path", { d: `M6 7H${width - 6}M6 20H${width - 6}`, fill: "none", stroke: "#6e452e", "stroke-width": 1, opacity: ".35" }));
+    const title = svgElement("title"); title.textContent = text; group.append(title);
+    const caption = svgElement("text", { x: width / 2, y: 13.5, "text-anchor": "middle", "dominant-baseline": "middle", fill: "#39271f", "font-size": 10.5, "font-family": "system-ui,sans-serif", "font-weight": 800, "letter-spacing": ".55" });
+    caption.textContent = text; group.append(caption); parent.append(group);
   }
 
   function sortWallDepth(force = false) {
@@ -279,19 +337,81 @@
 
   function sortEntities(force = false) {
     const objects = mapData.objects.filter((item) => item._node).sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
-    let playerIndex = objects.findIndex((item) => {
-      const asset = assetById(item.assetId);
-      return playerState.y < (item.depth ?? item.y + item.height * (asset?.depthAnchor ?? 0.9));
-    });
-    if (playerIndex < 0) playerIndex = objects.length;
-    objects.splice(playerIndex, 0, player);
-    const ordered = objects;
+    const ordered = [...objects, player];
     const key = ordered.map((item) => item === player ? "player" : item.id).join("|");
     if (force || key !== lastEntityOrder) {
       ordered.forEach((item) => entities.append(item === player ? player : item._node));
       lastEntityOrder = key;
     }
   }
+
+  function nearestSearchableItem() {
+    if (activeInteraction) return activeInteraction;
+    const body = settings.player.collision;
+    let nearest = null; let nearestDistance = Infinity;
+    for (const item of mapData.objects) {
+      const asset = assetById(item.assetId);
+      if (!asset?.interaction?.checkedAssetId || !assetById(asset.interaction.checkedAssetId)) continue;
+      const x = item.x + item.width / 2;
+      const y = item.y + item.height * (asset.depthAnchor ?? 0.9);
+      const distance = Math.hypot(playerState.x - x, playerState.y - body.footOffset - y);
+      const range = Math.max(84, Math.min(132, Math.max(item.width, item.height) * 0.62));
+      if (distance <= range && distance < nearestDistance) { nearest = item; nearestDistance = distance; }
+    }
+    return nearest;
+  }
+
+  function updateInteractionPrompt() {
+    if (!interactionButton || !playerState || !mapData) return;
+    const item = nearestSearchableItem();
+    interactionPromptItem = item;
+    if (!item) { interactionButton.hidden = true; return; }
+    const baseAsset = assetById(item.assetId);
+    interactionLabel.textContent = activeInteraction ? "Done" : (baseAsset.interaction.actionLabel || "Check");
+    interactionTarget.textContent = item.name || baseAsset.name;
+    interactionButton.setAttribute("aria-label", `${interactionLabel.textContent} ${item.name || baseAsset.name}`);
+    interactionButton.hidden = false;
+    positionInteractionPrompt();
+  }
+
+  function positionInteractionPrompt() {
+    const item = interactionPromptItem;
+    if (!item || interactionButton.hidden) return;
+    const point = svg.createSVGPoint();
+    point.x = item.x + item.width / 2;
+    point.y = item.y - 8;
+    const matrix = world.getScreenCTM();
+    if (!matrix) return;
+    const screenPoint = point.matrixTransform(matrix);
+    const margin = 64;
+    const x = Math.max(margin, Math.min(window.innerWidth - margin, screenPoint.x));
+    const y = Math.max(62, Math.min(window.innerHeight - 85, screenPoint.y));
+    interactionButton.style.transform = `translate3d(${x}px,${y}px,0) translate(-50%,-100%)`;
+  }
+
+  function closeInteraction() {
+    if (!activeInteraction) return;
+    const asset = assetById(activeInteraction.assetId);
+    if (asset && activeInteraction._node) activeInteraction._node.setAttribute("href", asset.src);
+    activeInteraction = null;
+    updateInteractionPrompt();
+  }
+
+  function toggleInteraction() {
+    if (activeInteraction) { closeInteraction(); return; }
+    const item = nearestSearchableItem();
+    if (!item) return;
+    const asset = assetById(item.assetId);
+    const checked = assetById(asset?.interaction?.checkedAssetId);
+    if (!checked || !item._node) return;
+    activeInteraction = item;
+    item._node.setAttribute("href", checked.src);
+    input.destination = null; input.x = 0; input.y = 0;
+    playerState.vx = 0; playerState.vy = 0;
+    knob.style.transform = "translate(0, 0)";
+    updateInteractionPrompt();
+  }
+  interactionButton.addEventListener("click", toggleInteraction);
 
   function setFrame(frame) {
     const scale = settings.player.sprite.displayHeight / 453;
@@ -305,7 +425,10 @@
   }
 
   function setPlayerTransform() {
-    player.setAttribute("transform", `translate(${playerState.x.toFixed(2)} ${playerState.y.toFixed(2)}) scale(${playerState.face} 1)`);
+    const transform = `translate(${playerState.x.toFixed(2)} ${playerState.y.toFixed(2)}) scale(${playerState.face} 1)`;
+    if (transform === lastPlayerTransform) return;
+    player.setAttribute("transform", transform);
+    lastPlayerTransform = transform;
   }
 
   function transformColliderPoint(item, point) {
@@ -339,8 +462,8 @@
         px >= region.x && px <= region.x + region.width && py >= region.y && py <= region.y + region.height
       );
       if (!insideFloor(x, cy)) return false;
-      for (let sample = 0; sample < 64; sample += 1) {
-        const angle = (sample / 64) * Math.PI * 2;
+      for (let sample = 0; sample < 16; sample += 1) {
+        const angle = (sample / 16) * Math.PI * 2;
         if (!insideFloor(x + Math.cos(angle) * body.radius, cy + Math.sin(angle) * body.radius)) return false;
       }
       for (const wall of mapData.wallSegments || []) {
@@ -363,10 +486,9 @@
       }
     }
     for (const item of mapData.objects) {
-      const collider = colliderOf(item);
-      if (!collider || collider.type !== "polygon" || collider.points?.length < 3) continue;
-      const polygon = collider.points.map((point) => transformColliderPoint(item, point));
-      if (circleTouchesPolygon(x, cy, body.radius, polygon)) return false;
+      const collider = item._worldCollider;
+      if (!collider || x + body.radius < collider.left || x - body.radius > collider.right || cy + body.radius < collider.top || cy - body.radius > collider.bottom) continue;
+      if (circleTouchesPolygon(x, cy, body.radius, collider.points)) return false;
     }
     return true;
   }
@@ -374,7 +496,7 @@
   function updateCamera(dt) {
     const view = svg.viewBox.baseVal;
     const centerX = view.x + view.width / 2; const centerY = view.y + view.height / 2;
-    const zoom = settings.camera.zoom; const bounds = mapData.bounds;
+    const zoom = settings.camera.zoom * zoomFactors[zoomStep]; const bounds = mapData.bounds;
     let targetX = centerX - playerState.x * zoom; let targetY = centerY - playerState.y * zoom;
     const minX = view.x + view.width - bounds.right * zoom; const maxX = view.x - bounds.left * zoom;
     const minY = view.y + view.height - bounds.bottom * zoom; const maxY = view.y - bounds.top * zoom;
@@ -385,7 +507,11 @@
       const follow = 1 - Math.exp(-settings.camera.ease * dt);
       cameraX += (targetX - cameraX) * follow; cameraY += (targetY - cameraY) * follow;
     }
-    world.setAttribute("transform", `translate(${cameraX.toFixed(2)} ${cameraY.toFixed(2)}) scale(${zoom})`);
+    const transform = `translate(${cameraX.toFixed(2)} ${cameraY.toFixed(2)}) scale(${zoom})`;
+    if (transform !== lastCameraTransform) {
+      world.setAttribute("transform", transform);
+      lastCameraTransform = transform;
+    }
   }
 
   function keyboardVector() {
@@ -410,7 +536,7 @@
 
   function update(dt, timestamp) {
     const movement = settings.player.movement;
-    const move = keyboardVector(); const length = Math.hypot(move.x, move.y);
+    const move = activeInteraction ? { x: 0, y: 0 } : keyboardVector(); const length = Math.hypot(move.x, move.y);
     if (length > 0.06) {
       const intensity = Math.min(1, length); const nx = move.x / length; const ny = move.y / length;
       playerState.vx += nx * movement.acceleration * intensity * dt;
@@ -423,11 +549,15 @@
     }
     const oldX = playerState.x; const oldY = playerState.y;
     const nextX = oldX + playerState.vx * dt;
-    if (canOccupy(nextX, oldY)) playerState.x = nextX;
-    else { playerState.vx = 0; if (input.destination) input.destination = null; }
+    if (Math.abs(nextX - oldX) > 0.01) {
+      if (canOccupy(nextX, oldY)) playerState.x = nextX;
+      else { playerState.vx = 0; if (input.destination) input.destination = null; }
+    }
     const nextY = oldY + playerState.vy * dt;
-    if (canOccupy(playerState.x, nextY)) playerState.y = nextY;
-    else { playerState.vy = 0; if (input.destination) input.destination = null; }
+    if (Math.abs(nextY - oldY) > 0.01) {
+      if (canOccupy(playerState.x, nextY)) playerState.y = nextY;
+      else { playerState.vy = 0; if (input.destination) input.destination = null; }
+    }
 
     const velocity = Math.hypot(playerState.vx, playerState.vy); const walking = velocity > 7 && settings.player.sprite.walkingEnabled;
     if (Math.abs(playerState.vx) > 2) playerState.face = playerState.vx < 0 ? -1 : 1;
@@ -444,7 +574,12 @@
         setFrame(frameFor(settings.player.sprite.walkFrames[playerState.frameIndex]));
       }
     }
-    setPlayerTransform(); sortEntities(); sortWallDepth(); updateCamera(dt);
+    setPlayerTransform(); updateCamera(dt);
+    if (!interactionButton.hidden) positionInteractionPrompt();
+    if (timestamp - lastPromptUpdate >= 40) {
+      lastPromptUpdate = timestamp;
+      updateInteractionPrompt();
+    }
   }
 
   function setStickFromEvent(event) {
@@ -459,7 +594,7 @@
 
   async function start() {
     [mapData, settings, catalog] = await Promise.all([
-      getJson("maps/room-01/map.json"), getJson("game-settings.json"), getJson("assets/asset-manifest.json")
+      getJson("maps/room-01/map.json?v=colliders-20261002"), getJson("game-settings.json"), getJson("assets/asset-manifest.json?v=colliders-20261002")
     ]);
     mapData.playerSpawn = settings.player.spawn;
     renderWorld(); fitViewport();
@@ -473,6 +608,7 @@
   }
 
   stick.addEventListener("pointerdown", (event) => { input.pointerId = event.pointerId; input.destination = null; stick.setPointerCapture(event.pointerId); setStickFromEvent(event); event.preventDefault(); });
+  zoomCycleButton.addEventListener("click", () => setZoomStep(zoomStep + 1));
   stick.addEventListener("pointermove", (event) => { if (event.pointerId === input.pointerId) setStickFromEvent(event); });
   function resetStick(event) { if (event.pointerId !== input.pointerId) return; input.pointerId = null; input.x = 0; input.y = 0; knob.style.transform = "translate(0, 0)"; }
   stick.addEventListener("pointerup", resetStick); stick.addEventListener("pointercancel", resetStick);
@@ -485,6 +621,8 @@
   });
   window.addEventListener("keydown", (event) => {
     const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    if (key === "e") { toggleInteraction(); event.preventDefault(); return; }
+    if (key === "Escape" && activeInteraction) { closeInteraction(); event.preventDefault(); return; }
     if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "w", "a", "s", "d"].includes(key)) { input.keys.add(key); input.destination = null; event.preventDefault(); }
   });
   window.addEventListener("keyup", (event) => { const key = event.key.length === 1 ? event.key.toLowerCase() : event.key; input.keys.delete(key); });

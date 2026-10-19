@@ -6,11 +6,12 @@
   <meta name="theme-color" content="#343640" />
   <title>Room 01 · Game Map</title>
   <style>
-    * { box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    * { box-sizing: border-box; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; }
     body { min-height: 100svh; background: #343640; }
     main { width: 100vw; height: 100svh; height: 100dvh; display: grid; place-items: center; overflow: hidden; background: radial-gradient(ellipse at center, #4c4d57 0, #343640 72%); }
-    main > svg { display: block; width: 100%; height: 100%; }
+    main > svg { display: block; width: 100%; height: 100%; touch-action: none; }
+    #game-container canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     @media (max-aspect-ratio: 4/5) {
       main { background: radial-gradient(ellipse at center, #4b4c56 0, #343640 76%); }
     }
@@ -18,7 +19,7 @@
       #room { animation: reveal .45s ease-out both; transform-origin: center; }
       @keyframes reveal { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: scale(1); } }
     }
-    .touch-controls { position: fixed; z-index: 5; left: max(18px, env(safe-area-inset-left)); bottom: max(18px, env(safe-area-inset-bottom)); display: none; width: 124px; height: 124px; padding: 0; border: 0; background: transparent; touch-action: none; user-select: none; -webkit-user-select: none; }
+    .touch-controls { position: fixed; z-index: 5; right: max(18px, env(safe-area-inset-right)); left: auto; bottom: max(18px, env(safe-area-inset-bottom)); display: none; width: 124px; height: 124px; padding: 0; border: 0; background: transparent; touch-action: none; user-select: none; -webkit-user-select: none; }
     .stick-base { position: absolute; inset: 0; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.27); border-radius: 50%; background: rgba(24,26,32,.27); box-shadow: inset 0 1px 8px rgba(0,0,0,.1); backdrop-filter: blur(3px); }
     .stick-knob { width: 48px; height: 48px; border: 1px solid rgba(255,255,255,.6); border-radius: 50%; background: rgba(240,241,236,.8); box-shadow: 0 2px 10px rgba(0,0,0,.18); transform: translate(0,0); }
     .touch-controls:focus-visible .stick-base { outline: 3px solid rgba(255,255,255,.72); outline-offset: 3px; }
@@ -26,6 +27,16 @@
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
     .designer-link { position: fixed; z-index: 6; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid rgba(255,255,255,.23); border-radius: 11px; background: rgba(29,31,38,.45); color: #f7f6f0; font: 600 17px/1 ui-sans-serif, sans-serif; text-decoration: none; backdrop-filter: blur(5px); }
     .designer-link:focus-visible { outline: 2px solid white; outline-offset: 3px; }
+    .zoom-cycle { position:fixed; z-index:7; top:max(60px,calc(env(safe-area-inset-top) + 48px)); right:max(12px,env(safe-area-inset-right)); display:grid; width:54px; height:54px; place-items:center; padding:0; border:2px solid rgba(255,255,255,.7); border-radius:50%; background:rgba(29,31,38,.92); box-shadow:0 4px 16px rgba(13,14,19,.38); backdrop-filter:blur(7px); color:#FFD166; font:750 13px/1 system-ui,sans-serif; font-variant-numeric:tabular-nums; cursor:pointer; touch-action:manipulation; }
+    .zoom-cycle:active { transform:scale(.94); }
+    .zoom-cycle:focus-visible { outline:2px solid #78C3FB; outline-offset:3px; }
+    .interaction-action { position: fixed; z-index: 8; top: 0; left: 0; display: inline-flex; min-width: 116px; min-height: 48px; align-items: center; gap: 9px; padding: 7px 13px 7px 9px; border: 2px solid #ffe09a; border-radius: 15px; background: #4a2434; box-shadow: 0 4px 14px rgba(20,17,23,.35); color: #fff8e7; font: 700 13px/1.15 system-ui,sans-serif; cursor: pointer; touch-action: manipulation; transform: translate(-50%,-100%); will-change:transform; animation: action-pop .16s ease-out both; }
+    .interaction-action[hidden] { display: none; }
+    .interaction-action:focus-visible { outline: 3px solid #78C3FB; outline-offset: 3px; }
+    .interaction-icon { display:grid; width:29px; height:29px; flex:0 0 29px; place-items:center; border-radius:9px; background:#FFD166; color:#4a2434; font-size:19px; font-weight:800; }
+    .interaction-copy { display:grid; gap:2px; text-align:left; }
+    .interaction-copy small { max-width:140px; overflow:hidden; color:#ead9bd; font-size:10px; font-weight:550; text-overflow:ellipsis; white-space:nowrap; }
+    @keyframes action-pop { from { opacity:0; scale:.92; } to { opacity:1; scale:1; } }
   </style>
 </head>
 <body>
@@ -81,11 +92,14 @@
     </svg>
   </main>
   <a class="designer-link" href="map-designer.html" aria-label="Open map designer" title="Design map">✎</a>
+  <button class="zoom-cycle" id="zoom-cycle" type="button" aria-label="Change camera zoom, currently 1×" title="Tap to change zoom">1×</button>
+  <button class="interaction-action" id="interaction-action" type="button" hidden aria-live="polite"><span class="interaction-icon" aria-hidden="true">⌕</span><span class="interaction-copy"><strong id="interaction-label">Check</strong><small id="interaction-target"></small></span></button>
   <button class="touch-controls" id="move-stick" type="button" aria-label="Move the explorer with the virtual joystick">
     <span class="stick-base"><span class="stick-knob" id="stick-knob"></span></span>
   </button>
-  <p class="sr-only" id="game-hint">Use the arrow keys or W A S D, click or tap a destination, or drag the virtual joystick to move. The explorer stops at walls and furniture.</p>
+  <p class="sr-only" id="game-hint">Use the arrow keys or W A S D, click or tap a destination, or drag the virtual joystick to move. Approach a searchable prop and choose Check, or press E, to inspect it. The explorer stops at walls and furniture.</p>
   <p id="load-error" role="status" style="position:fixed;left:50%;top:50%;max-width:min(90vw,32rem);transform:translate(-50%,-50%);padding:1rem 1.2rem;border:1px solid #777;border-radius:12px;background:#292b33;color:#fff;font:14px/1.5 system-ui;text-align:center;display:none"></p>
-  <script src="game.js?v=wall-joints-20260930" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.90.0/dist/phaser.min.js" defer></script>
+  <script src="game-webgl.js?v=webgl-renderer-20261019" defer></script>
 </body>
 </html>

@@ -1,16 +1,19 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const svgNs = "http://www.w3.org/2000/svg";
-  const state = { assets: [], objects: [], selectedId: null, selectedWallId: null, wallTool: "select", dirty: false, zoom: 1, drag: null, snap: true, lockRatio: true, projectDirectory: null, map: null };
+  const designerDataVersion = 2;
+  const state = { assets: [], objects: [], selectedId: null, selectedWallId: null, wallTool: "select", dirty: false, zoom: 1, viewCenterX: null, viewCenterY: null, drag: null, snap: true, lockRatio: true, projectDirectory: null, map: null, assetFilter: "" };
   const ui = {
     map: $("designer-map"), room: $("fixed-room"), walls: $("room-walls"), placed: $("placed-assets"), selection: $("selection-layer"), grid: null, stage: $("stage-viewport"),
-    projectInput: $("project-file"), assetList: $("asset-list"), assetCount: $("asset-count"),
+    miniMap: $("mini-map"), miniMapContent: $("mini-map-content"), miniMapViewport: $("mini-map-viewport"),
+    projectInput: $("project-file"), assetList: $("asset-list"), assetCount: $("asset-count"), assetSearch: $("asset-search"),
     save: $("save-project"), saveToProject: $("save-to-project"), saveState: $("save-state"), open: $("open-project"), export: $("export-project"), toast: $("toast"),
     selectedTitle: $("selected-title"), emptyInspector: $("empty-inspector"), inspector: $("inspector-fields"),
     name: $("object-name"), x: $("object-x"), y: $("object-y"), width: $("object-width"), height: $("object-height"),
     rotation: $("object-rotation"), rotationValue: $("rotation-value"), lock: $("lock-ratio"), snap: $("snap-grid"),
+    collidable: $("object-collidable"), interactionNote: $("interaction-note"),
     front: $("layer-front"), back: $("layer-back"), remove: $("delete-object"), dimensions: $("object-dimensions"),
-    layerList: $("layer-list"), objectCount: $("object-count"), hint: $("canvas-hint"), zoomValue: $("zoom-value"),
+    layerList: $("layer-list"), objectCount: $("object-count"), objectSummary: $("canvas-object-summary"), hint: $("canvas-hint"), zoomValue: $("zoom-value"),
     wallCount: $("wall-count"), wallStatus: $("wall-selection-status"), wallFields: $("wall-fields"),
     wallX1: $("wall-x1"), wallY1: $("wall-y1"), wallX2: $("wall-x2"), wallY2: $("wall-y2"), wallWidth: $("wall-width"), wallDimensions: $("wall-dimensions"),
     wallSelectTool: $("wall-select-tool"), wallDrawTool: $("wall-draw-tool"), deleteWall: $("delete-wall")
@@ -23,6 +26,7 @@
   const selectedWall = () => wallSegments().find((wall) => wall.id === state.selectedWallId);
 
   function normalizeWalls() {
+    state.map.features = (state.map.features || []).filter((feature) => feature.type !== "window");
     state.map.wallSegments ||= (state.map.walls || []).map((wall) => {
       const match = wall.path?.match(/M\s*(-?[\d.]+)[ ,]+(-?[\d.]+)\s*L\s*(-?[\d.]+)[ ,]+(-?[\d.]+)/i);
       return match ? { x1: Number(match[1]), y1: Number(match[2]), x2: Number(match[3]), y2: Number(match[4]), width: wall.width || 26, stroke: wall.stroke, edgeStroke: wall.edgeStroke } : null;
@@ -189,9 +193,26 @@
         ui.room.append(createSvg("rect", { x: region.x, y: region.y, width: region.width, height: region.height, fill: "url(#designer-grid)", opacity: state.snap ? ".18" : "0", "pointer-events": "none" }));
       }
     });
+    (state.map.labels || []).forEach((label) => drawSectionLabel(label));
     (state.map.landscape || []).forEach(drawCampusDecor);
     (state.map.features || []).filter((feature) => feature.type === "swing-door").forEach(drawSwingDoor);
     renderWallLayer();
+  }
+
+  function drawSectionLabel(label) {
+    const text = String(label.text || "").trim();
+    if (!text) return;
+    const width = Math.max(70, text.length * 6.7 + 18);
+    const group = createSvg("g", { transform: `translate(${label.x} ${label.y})`, "pointer-events": "none", class: "map-section-label" });
+    group.append(createSvg("path", { d: `M${width * .24} -14v12M${width * .76} -14v12`, fill: "none", stroke: "#4b3025", "stroke-width": 2.4, "stroke-linecap": "round" }));
+    [[width * .24, -14], [width * .76, -14]].forEach(([cx, cy]) => group.append(createSvg("circle", { cx, cy, r: 2.3, fill: "#e7bb7d", stroke: "#4b3025", "stroke-width": 1.2 })));
+    group.append(createSvg("rect", { x: 2, y: 3, width, height: 26, rx: 4, fill: "#38251f", opacity: ".35" }));
+    group.append(createSvg("rect", { x: 0, y: 0, width, height: 26, rx: 4, fill: "#a86e43", stroke: "#4b3025", "stroke-width": 2.5 }));
+    group.append(createSvg("rect", { x: 3, y: 3, width: width - 6, height: 20, rx: 2, fill: "none", stroke: "#d8a36a", "stroke-width": 1, opacity: ".9" }));
+    group.append(createSvg("path", { d: `M6 7H${width - 6}M6 20H${width - 6}`, fill: "none", stroke: "#6e452e", "stroke-width": 1, opacity: ".35" }));
+    const title = createSvg("title"); title.textContent = text; group.append(title);
+    const caption = createSvg("text", { x: width / 2, y: 13.5, "text-anchor": "middle", "dominant-baseline": "middle", fill: "#39271f", "font-size": 10.5, "font-family": "system-ui,sans-serif", "font-weight": 800, "letter-spacing": ".55" });
+    caption.textContent = text; group.append(caption); ui.room.append(group);
   }
 
   function drawCampusDecor(item) {
@@ -252,8 +273,10 @@
 
   function renderAssets() {
     ui.assetList.replaceChildren();
-    ui.assetCount.textContent = String(state.assets.length);
-    state.assets.forEach((asset) => {
+    const placeableAssets = state.assets.filter((asset) => !asset.hideInDesigner);
+    ui.assetCount.textContent = String(placeableAssets.length);
+    const filteredAssets = placeableAssets.filter((asset) => asset.name.toLowerCase().includes(state.assetFilter));
+    filteredAssets.forEach((asset) => {
       const row = document.createElement("div"); row.className = "asset-row";
       const thumb = document.createElement("div"); thumb.className = "asset-thumb";
       const image = document.createElement("img"); image.src = asset.url; image.alt = ""; thumb.append(image);
@@ -261,10 +284,13 @@
       const name = document.createElement("div"); name.className = "asset-name"; name.textContent = asset.name;
       const dims = document.createElement("div"); dims.className = "asset-dims"; dims.textContent = `${asset.width} × ${asset.height}px`;
       const actions = document.createElement("div"); actions.className = "asset-buttons";
-      const add = document.createElement("button"); add.type = "button"; add.textContent = "Add to room";
+      const add = document.createElement("button"); add.type = "button"; add.textContent = "Add";
       add.addEventListener("click", () => addObject(asset.id));
       actions.append(add); info.append(name, dims, actions); row.append(thumb, info); ui.assetList.append(row);
     });
+    if (!filteredAssets.length) {
+      const empty = document.createElement("p"); empty.className = "library-note"; empty.textContent = "No props match that search."; ui.assetList.append(empty);
+    }
   }
 
   function renderScene() {
@@ -285,13 +311,15 @@
     if (item) {
       const group = createSvg("g", { transform: `rotate(${Number(item.rotation) || 0} ${item.x + item.width / 2} ${item.y + item.height / 2})`, "pointer-events": "none" });
       group.append(createSvg("rect", { x: item.x, y: item.y, width: item.width, height: item.height, class: "selection-box" }));
-      const collider = item.collider || assetById(item.assetId)?.collider;
+      const asset = assetById(item.assetId);
+      const collider = item.collider || asset?.collider;
+      const collidable = item.collidable ?? (asset?.collidable !== false);
       if (collider?.type === "polygon" && collider.points?.length >= 3) {
         const points = collider.points.map(([px, py]) => `${item.x + px * item.width},${item.y + py * item.height}`).join(" ");
-        group.append(createSvg("polygon", { points, class: "collision-polygon" }));
+        group.append(createSvg("polygon", { points, class: `collision-polygon${collidable ? "" : " disabled"}` }));
         collider.points.forEach(([px, py], index) => group.append(createSvg("circle", {
-          cx: item.x + px * item.width, cy: item.y + py * item.height, r: 4,
-          class: "collision-handle", "data-collider-index": index, "data-object-id": item.id, "pointer-events": "all"
+          cx: item.x + px * item.width, cy: item.y + py * item.height, r: 3.2,
+          class: `collision-handle${collidable ? "" : " disabled"}`, "data-collider-index": index, "data-object-id": item.id, "pointer-events": "all"
         })));
       }
       [["nw", item.x, item.y], ["ne", item.x + item.width, item.y], ["sw", item.x, item.y + item.height], ["se", item.x + item.width, item.y + item.height]].forEach(([corner, x, y]) => {
@@ -301,12 +329,13 @@
       ui.selection.append(group);
     }
     renderWallSelection(); renderWallInspector();
-    renderLayers(); updateInspector();
+    renderLayers(); updateInspector(); queueMinimapRender();
   }
 
   function renderLayers() {
     ui.layerList.replaceChildren();
     ui.objectCount.textContent = String(state.objects.length);
+    ui.objectSummary.textContent = `${state.objects.length} placed props`;
     [...state.objects].reverse().forEach((item, reverseIndex) => {
       const index = state.objects.length - reverseIndex - 1;
       const row = document.createElement("div"); row.className = `layer-row${item.id === state.selectedId ? " active" : ""}`;
@@ -336,18 +365,54 @@
     ui.width.value = Math.round(item.width); ui.height.value = Math.round(item.height);
     ui.rotation.value = String(Math.round(item.rotation || 0));
     ui.rotationValue.textContent = `${Math.round(item.rotation || 0)}°`;
+    const asset = assetById(item.assetId);
+    ui.collidable.checked = item.collidable ?? (asset?.collidable !== false);
+    ui.interactionNote.hidden = !asset?.interaction;
     ui.dimensions.textContent = `${Math.round(item.width)} × ${Math.round(item.height)} units · center ${Math.round(item.x + item.width / 2)}, ${Math.round(item.y + item.height / 2)}`;
   }
 
   function setZoom(value) {
-    state.zoom = Math.max(.62, Math.min(1.5, value));
+    state.zoom = Math.max(1 / 3, Math.min(1, value));
     const bounds = state.map.bounds;
-    const centerX = (bounds.left + bounds.right) / 2;
-    const centerY = (bounds.top + bounds.bottom) / 2;
+    state.viewCenterX ??= (bounds.left + bounds.right) / 2;
+    state.viewCenterY ??= (bounds.top + bounds.bottom) / 2;
     const width = (bounds.right - bounds.left + 100) / state.zoom;
     const height = (bounds.bottom - bounds.top + 100) / state.zoom;
-    ui.map.setAttribute("viewBox", `${centerX - width / 2} ${centerY - height / 2} ${width} ${height}`);
-    ui.zoomValue.textContent = `${Math.round(state.zoom * 100)}%`;
+    ui.map.setAttribute("viewBox", `${state.viewCenterX - width / 2} ${state.viewCenterY - height / 2} ${width} ${height}`);
+    ui.zoomValue.textContent = `${Math.round(1 / state.zoom)}×`;
+    document.querySelectorAll("[data-zoom-out-level]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(Math.abs(1 / state.zoom - Number(button.dataset.zoomOutLevel)) < .02));
+    });
+    queueMinimapRender();
+  }
+
+  let miniMapFrame = 0;
+  function queueMinimapRender() {
+    if (miniMapFrame) return;
+    miniMapFrame = requestAnimationFrame(() => { miniMapFrame = 0; renderMinimap(); });
+  }
+
+  function renderMinimap() {
+    if (!state.map || !ui.miniMapContent) return;
+    const bounds = state.map.bounds;
+    ui.miniMap.setAttribute("viewBox", `${bounds.left} ${bounds.top} ${bounds.right - bounds.left} ${bounds.bottom - bounds.top}`);
+    ui.miniMapContent.replaceChildren();
+    [ui.room, ui.placed, ui.walls].forEach((source) => {
+      const layer = source.cloneNode(true);
+      [layer, ...layer.querySelectorAll("[id]")].forEach((element) => element.removeAttribute("id"));
+      ui.miniMapContent.append(layer);
+    });
+    const view = ui.map.viewBox.baseVal;
+    ["x", "y", "width", "height"].forEach((key) => ui.miniMapViewport.setAttribute(key, view[key]));
+  }
+
+  function navigateFromMinimap(event) {
+    const matrix = ui.miniMap.getScreenCTM();
+    if (!matrix) return;
+    const point = ui.miniMap.createSVGPoint(); point.x = event.clientX; point.y = event.clientY;
+    const mapPoint = point.matrixTransform(matrix.inverse());
+    state.viewCenterX = mapPoint.x; state.viewCenterY = mapPoint.y;
+    setZoom(state.zoom);
   }
 
   function selectObject(id) {
@@ -355,14 +420,14 @@
     state.selectedWallId = null;
     renderScene();
     const item = selectedObject();
-    ui.hint.textContent = item ? `${item.name} · move, resize, rotate, or drag the orange collision points` : "Select an asset or drag an item to arrange it.";
+    ui.hint.textContent = item ? `${item.name} · drag to move, use a corner to resize` : "Drag an item to move it. Select an item to edit it.";
   }
 
   function addObject(assetId) {
     const asset = assetById(assetId); if (!asset) return;
     const scale = Math.min(112 / asset.width, 124 / asset.height, 1);
     const width = asset.defaultSize?.width || Math.max(8, asset.width * scale); const height = asset.defaultSize?.height || Math.max(8, asset.height * scale);
-    const item = { id: makeId(), assetId, name: asset.name.replace(/\.[^.]+$/, ""), x: 450 - width / 2, y: 430 - height / 2, width, height, rotation: 0, z: state.objects.length, collider: null };
+    const item = { id: makeId(), assetId, name: asset.name.replace(/\.[^.]+$/, ""), x: 450 - width / 2, y: 430 - height / 2, width, height, rotation: 0, z: state.objects.length, collider: null, collidable: asset.collidable !== false };
     state.objects.push(item); state.selectedId = item.id; dirty(); renderScene();
     toast(`${item.name} added to the room.`);
   }
@@ -532,7 +597,13 @@
   ui.name.addEventListener("input", () => { const item = selectedObject(); if (!item) return; item.name = ui.name.value.trim() || "Room object"; ui.selectedTitle.textContent = item.name; dirty(); renderLayers(); });
   ui.rotation.addEventListener("input", () => { const item = selectedObject(); if (!item) return; item.rotation = Number(ui.rotation.value); ui.rotationValue.textContent = `${item.rotation}°`; dirty(); renderScene(); });
   ui.lock.addEventListener("change", () => { state.lockRatio = ui.lock.checked; });
+  ui.collidable.addEventListener("change", () => {
+    const item = selectedObject(); if (!item) return;
+    item.collidable = ui.collidable.checked;
+    dirty(); renderScene();
+  });
   ui.snap.addEventListener("change", () => { state.snap = ui.snap.checked; ui.grid?.setAttribute("opacity", state.snap ? ".18" : "0"); });
+  ui.assetSearch.addEventListener("input", () => { state.assetFilter = ui.assetSearch.value.trim().toLowerCase(); renderAssets(); });
 
   function reorderObject(id, delta) {
     const index = state.objects.findIndex((item) => item.id === id); const next = index + delta;
@@ -587,7 +658,7 @@
 
   async function saveLocally() {
     const record = {
-      id: "room-01", map: serializableMap(),
+      id: "room-01", designerDataVersion, map: serializableMap(),
       updatedAt: new Date().toISOString()
     };
     try { await saveRecord(record); savedState(record.updatedAt); toast("Room images and placements saved in this browser."); }
@@ -665,9 +736,16 @@
     try { await importProject(file); } catch (error) { toast(error.message || "Could not open that project."); }
     ui.projectInput.value = "";
   });
-  $("zoom-in").addEventListener("click", () => setZoom(state.zoom * 1.15));
-  $("zoom-out").addEventListener("click", () => setZoom(state.zoom / 1.15));
-  $("zoom-fit").addEventListener("click", () => setZoom(1));
+  document.querySelectorAll("[data-zoom-out-level]").forEach((button) => {
+    button.addEventListener("click", () => setZoom(1 / Number(button.dataset.zoomOutLevel)));
+  });
+  ui.miniMap.addEventListener("click", navigateFromMinimap);
+  $("mini-map-center").addEventListener("click", () => {
+    const bounds = state.map.bounds;
+    state.viewCenterX = (bounds.left + bounds.right) / 2;
+    state.viewCenterY = (bounds.top + bounds.bottom) / 2;
+    setZoom(state.zoom);
+  });
   document.addEventListener("keydown", (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") { event.preventDefault(); saveLocally(); }
     if ((event.key === "Delete" || event.key === "Backspace") && !["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) {
@@ -680,18 +758,32 @@
     try {
       const record = await readRecord(); if (!record) return;
       if (!record.map || !Array.isArray(record.map.objects)) return;
-      state.map = record.map; state.objects = record.map.objects; state.selectedId = null; state.selectedWallId = null; normalizeWalls(); renderRoom(); renderScene(); savedState(record.updatedAt);
+      const currentMap = state.map;
+      const savedById = new Map(record.map.objects.map((item) => [item.id, item]));
+      const currentIds = new Set(currentMap.objects.map((item) => item.id));
+      const mergedObjects = currentMap.objects.map((item) => savedById.get(item.id) || item);
+      record.map.objects.forEach((item) => { if (!currentIds.has(item.id)) mergedObjects.push(item); });
+      const addedCurrentProps = currentMap.objects.some((item) => !savedById.has(item.id));
+      const needsSaveMigration = addedCurrentProps || record.designerDataVersion !== designerDataVersion || record.map.features?.some((feature) => feature.type === "window");
+      // The project map remains canonical for the room and walls; keep locally saved
+      // transforms for matching props and merge in props added since the last save.
+      state.map = currentMap; state.objects = mergedObjects; state.map.objects = mergedObjects;
+      state.selectedId = null; state.selectedWallId = null; normalizeWalls(); renderRoom(); renderScene();
+      if (needsSaveMigration) {
+        const migrated = { id: "room-01", designerDataVersion, map: serializableMap(), updatedAt: new Date().toISOString() };
+        await saveRecord(migrated); savedState(migrated.updatedAt);
+      } else savedState(record.updatedAt);
     } catch (_error) { /* Keep the built-in default room ready when browser storage is unavailable. */ }
   }
 
   async function initialize() {
-    const [manifestResponse, mapResponse] = await Promise.all([fetch("assets/asset-manifest.json"), fetch("maps/room-01/map.json")]);
+    const [manifestResponse, mapResponse] = await Promise.all([fetch("assets/asset-manifest.json?v=colliders-20261002"), fetch("maps/room-01/map.json?v=colliders-20261002")]);
     if (!manifestResponse.ok || !mapResponse.ok) throw new Error("Could not load the asset catalog or room map.");
     const manifest = await manifestResponse.json();
     state.map = await mapResponse.json();
     normalizeWalls();
     renderRoom();
-    state.assets = await Promise.all(manifest.assets.map(async (asset) => {
+    state.assets = await Promise.all(manifest.assets.filter((asset) => !asset.hideInDesigner).map(async (asset) => {
       const image = await new Promise((resolve, reject) => {
         const element = new Image(); element.onload = () => resolve(element); element.onerror = () => reject(new Error(`Unable to load asset: ${asset.src}`)); element.src = asset.src;
       });

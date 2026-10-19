@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f4f4ef" />
+  <title>Prepare assets · Roomscape</title>
+  <link rel="stylesheet" href="asset-importer.css" />
+  <script src="asset-importer.js?v=asset-importer-batch-20261002" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="index.html"><span class="brand-mark">R</span><span>ROOMSCAPE</span><span class="separator">/</span><span class="brand-page">Asset workshop</span></a>
+      <a class="back-link" href="map-designer.html">Back to map designer <span aria-hidden="true">↗</span></a>
+    </header>
+
+    <main class="workspace">
+      <section class="intro">
+        <div>
+          <p class="eyebrow">Room 01 · Asset pipeline</p>
+          <h1>Build an asset pack</h1>
+          <p class="description">Prepare as many room assets as you like, then download one ZIP with the optimized images and updated catalog.</p>
+        </div>
+        <div class="local-note"><span class="status-dot"></span><span>Processed in your browser · no server required</span></div>
+      </section>
+
+      <form id="asset-form" class="asset-workspace">
+        <section class="asset-inputs" aria-label="Asset images and options">
+          <div class="section-heading"><span class="step">01</span><div><h2>Asset details</h2><p>Name it and choose how players interact with it.</p></div></div>
+          <label class="field" for="asset-name">Asset name<input id="asset-name" name="name" type="text" maxlength="48" placeholder="For example, teal sofa" required /></label>
+          <div class="type-choice" role="radiogroup" aria-label="Asset interaction type">
+            <label class="type-option selected" id="decorative-option"><input type="radio" name="asset-type" value="decorative" checked /><span class="choice-copy"><strong>Decorative</strong><small>One image · no Check action</small></span><span class="choice-mark" aria-hidden="true">●</span></label>
+            <label class="type-option" id="searchable-option"><input type="radio" name="asset-type" value="searchable" /><span class="choice-copy"><strong>Hides an item</strong><small>Normal image plus checked image</small></span><span class="choice-mark" aria-hidden="true">○</span></label>
+          </div>
+
+          <div class="upload-pair">
+            <div class="upload-group">
+              <div class="upload-label"><span>Normal state</span><span class="required-tag">Required</span></div>
+              <label class="dropzone" id="normal-drop" for="normal-file">
+                <input id="normal-file" type="file" accept="image/png,image/jpeg,image/webp,image/avif" />
+                <span class="upload-icon" aria-hidden="true">↑</span><strong>Choose or drop an image</strong><small>PNG, JPG, WebP or AVIF</small>
+              </label>
+              <div class="image-preview checker" id="normal-preview"><span>No image selected</span></div>
+              <p class="file-meta" id="normal-meta">Transparent edges will be trimmed automatically.</p>
+            </div>
+            <div class="upload-group checked-group" id="checked-group" hidden>
+              <div class="upload-label"><span>Checked state</span><span class="required-tag">Required</span></div>
+              <label class="dropzone" id="checked-drop" for="checked-file">
+                <input id="checked-file" type="file" accept="image/png,image/jpeg,image/webp,image/avif" />
+                <span class="upload-icon" aria-hidden="true">↑</span><strong>Choose or drop an image</strong><small>Opened, lifted or moved version</small>
+              </label>
+              <div class="image-preview checker" id="checked-preview"><span>No image selected</span></div>
+              <p class="file-meta" id="checked-meta">Both states are trimmed on the same canvas bounds.</p>
+            </div>
+          </div>
+
+          <label class="field size-field" for="default-width">Starting size on the map <span>Map units</span><input id="default-width" type="number" min="24" max="600" step="4" value="160" /></label>
+          <p class="helper">You can resize and adjust the collision outline in the map designer after adding it.</p>
+        </section>
+
+        <aside class="output-panel" aria-label="Asset processing and submission">
+          <div class="section-heading"><span class="step">02</span><div><h2>Project output</h2><p>Optimized sprites and catalog entries.</p></div></div>
+          <div class="pipeline-list">
+            <div><span class="pipeline-icon">1</span><p><strong>Trim transparency</strong><small>Remove empty margins, preserve alpha.</small></p></div>
+            <div><span class="pipeline-icon">2</span><p><strong>Encode WebP</strong><small>Keep transparent art compact and crisp.</small></p></div>
+            <div><span class="pipeline-icon">3</span><p><strong>Bake catalog data</strong><small>Dimensions, silhouette collider and hide state.</small></p></div>
+          </div>
+          <div class="project-target">
+            <div><span class="target-kicker">ZIP contents</span><strong>Project-ready bundle</strong><small>Includes every queued WebP and a merged asset-manifest.json.</small></div>
+          </div>
+          <button id="submit-asset" class="submit-button" type="submit" disabled><span>Add processed asset to batch</span><span aria-hidden="true">＋</span></button>
+          <p class="submit-hint" id="submit-hint">Upload an image to add the first asset.</p>
+          <p class="message" id="message" role="status" aria-live="polite"></p>
+        </aside>
+      </form>
+      <section class="batch-panel" aria-labelledby="batch-title">
+        <div class="batch-heading"><div><p class="eyebrow">Ready to export</p><h2 id="batch-title">Asset batch <span id="batch-count">0</span></h2><p class="batch-note" id="batch-note">Processed assets will appear here. You can add more before exporting.</p></div><button id="create-zip" class="zip-button" type="button" disabled>Create ZIP <span aria-hidden="true">↓</span></button></div>
+        <ul class="batch-list" id="batch-list" aria-live="polite"></ul>
+      </section>
+      <footer class="workspace-footer"><a href="map-designer.html">Open the map designer</a><span>Images are processed in this browser. The ZIP downloads to your device.</span></footer>
+    </main>
+  </div>
+</body>
+</html>

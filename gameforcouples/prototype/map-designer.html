@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f4ef" />
   <title>Map Designer · Roomscape</title>
-  <link rel="stylesheet" href="map-designer.css" />
-  <script src="map-designer.js?v=wall-joints-20260930" defer></script>
+  <link rel="stylesheet" href="map-designer.css?v=minimap-zoom-presets-20261002" />
+  <script src="map-designer.js?v=minimap-zoom-presets-20261002" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -14,32 +14,33 @@
       <a class="brand" href="index.html"><span class="brand-mark">R</span><span>ROOMSCAPE</span><span class="separator">/</span><span class="brand-page">Map designer</span></a>
       <div class="top-actions">
         <span class="save-state" id="save-state" role="status">Default room</span>
-        <button class="button quiet" id="open-project" type="button">Open project</button>
-        <button class="button quiet" id="export-project" type="button">Export</button>
-        <button class="button quiet" id="save-project" type="button">Save locally</button>
-        <button class="button primary" id="save-to-project" type="button">Save to project</button>
+        <a class="button quiet" href="asset-importer.html">Prepare assets</a>
+        <details class="more-actions"><summary>More</summary><div class="more-menu"><button class="button quiet" id="open-project" type="button">Open map JSON</button><button class="button quiet" id="export-project" type="button">Export map JSON</button><button class="button quiet" id="save-project" type="button">Save on this device</button></div></details>
+        <button class="button primary" id="save-to-project" type="button">Save map</button>
       </div>
       <input id="project-file" type="file" accept="application/json,.json" hidden />
     </header>
 
     <main class="editor">
       <section class="page-title">
-        <div><p class="eyebrow">Room 01 · Design workspace</p><h1>Arrange the room</h1><p class="subcopy">Choose an asset, place it, then save the map used by the game.</p></div>
+        <div><p class="eyebrow">Room 01 · Map studio</p><h1>Arrange the room</h1><p class="subcopy">Drag props to move them. Select one to resize, rotate, or remove it.</p></div>
       </section>
 
       <section class="workspace" aria-label="Room map designer">
-        <aside class="library-panel" aria-label="Asset library">
-          <div class="panel-head"><div><p class="eyebrow">Your art</p><h2>Asset library <span id="asset-count">1</span></h2></div><label class="icon-button" for="asset-file" aria-label="Import images" title="Import images">＋</label></div>
-          <div class="asset-list" id="asset-list"></div>
-          <p class="library-note">Add art to <code>assets/furniture</code>, run the catalog script, then reload this page.</p>
-        </aside>
-
         <section class="map-panel" aria-label="Room canvas">
           <div class="canvas-toolbar">
-            <div class="canvas-title"><span class="live-dot"></span><strong>Room 01</strong><span>Multi-room orthogonal map</span></div>
-            <div class="canvas-tools"><label class="snap-toggle"><input id="snap-grid" type="checkbox" checked /><span>Snap</span></label><button id="zoom-out" class="icon-button" type="button" aria-label="Zoom out">−</button><output id="zoom-value">100%</output><button id="zoom-in" class="icon-button" type="button" aria-label="Zoom in">＋</button><button id="zoom-fit" class="tool-button" type="button">Fit</button></div>
+            <div class="canvas-title"><span class="live-dot"></span><strong>School map</strong><span id="canvas-object-summary">16 placed props</span></div>
+            <div class="canvas-tools"><label class="snap-toggle"><input id="snap-grid" type="checkbox" checked /><span>Snap</span></label><div class="zoom-presets" role="group" aria-label="Zoom out level"><button type="button" data-zoom-out-level="1" aria-pressed="true" aria-label="1× default zoom" title="1× default">1×</button><button type="button" data-zoom-out-level="2" aria-pressed="false" aria-label="Zoom out 2×" title="Zoom out 2×">2×</button><button type="button" data-zoom-out-level="3" aria-pressed="false" aria-label="Zoom out 3×" title="Zoom out 3×">3×</button></div><output id="zoom-value" aria-live="polite">1×</output></div>
           </div>
           <div class="stage-viewport" id="stage-viewport">
+            <aside class="mini-map-panel" aria-label="Map overview; click to navigate">
+              <div class="mini-map-heading"><span>Map overview</span><button id="mini-map-center" type="button" aria-label="Center map view" title="Center map view">◎</button></div>
+              <svg id="mini-map" viewBox="0 0 1600 1500" role="img" aria-label="Overview of the full room map">
+                <g id="mini-map-content"></g>
+                <rect id="mini-map-viewport" x="0" y="0" width="1600" height="1500" />
+              </svg>
+              <p>Tap to navigate</p>
+            </aside>
             <svg id="designer-map" viewBox="226 22 448 812" role="application" aria-label="Drag furniture onto the room map">
               <defs>
                 <pattern id="floor-panels" width="32" height="32" patternUnits="userSpaceOnUse"><rect width="32" height="32" fill="#dce2e8"/><path d="M0 0H32V32H0Z" fill="none" stroke="#8191a3" stroke-width=".7" opacity=".43"/></pattern>
@@ -56,27 +57,37 @@
               </defs>
               <g id="fixed-room"></g>
               <g id="placed-assets"></g>
-              <g id="room-walls"></g>
+              <g id="room-walls" pointer-events="none"></g>
               <g id="selection-layer"></g>
             </svg>
           </div>
-          <div class="canvas-footer"><span id="canvas-hint">Select an asset or drag an item to arrange it.</span><span>Map coordinates are in design units</span></div>
+          <div class="canvas-footer"><span id="canvas-hint">Drag an item to move it. Select an item to edit it.</span><span>Wall editing is paused</span></div>
         </section>
 
+        <aside class="library-panel" aria-label="Asset library">
+          <div class="panel-head"><div><p class="eyebrow">Room props</p><h2>Asset library <span id="asset-count">1</span></h2></div><a class="icon-button add-asset-link" href="asset-importer.html" aria-label="Prepare assets" title="Prepare assets">＋</a></div>
+          <label class="asset-search"><span class="sr-only">Search assets</span><input id="asset-search" type="search" placeholder="Find a prop…" autocomplete="off" /></label>
+          <div class="asset-list" id="asset-list"></div>
+          <p class="library-note">Tap <strong>Add</strong> to place another copy in the map.</p>
+        </aside>
+
         <aside class="inspector-panel" aria-label="Selected item and layer controls">
-          <div class="panel-head inspector-head"><div><p class="eyebrow">Selected item</p><h2 id="selected-title">Nothing selected</h2></div></div>
-          <div class="empty-inspector" id="empty-inspector">Choose an item on the map to edit its size, position, and angle.</div>
+          <div class="panel-head inspector-head"><div><p class="eyebrow">Properties</p><h2 id="selected-title">Nothing selected</h2></div></div>
+          <div class="empty-inspector" id="empty-inspector">Select a prop on the map to edit its position and size.</div>
           <div class="inspector-fields" id="inspector-fields" hidden>
             <label class="field">Name<input id="object-name" type="text" maxlength="48" /></label>
-            <div class="field-grid"><label class="field">X<input id="object-x" type="number" step="1" /></label><label class="field">Y<input id="object-y" type="number" step="1" /></label><label class="field">Width<input id="object-width" type="number" min="8" step="1" /></label><label class="field">Height<input id="object-height" type="number" min="8" step="1" /></label></div>
+            <p class="control-label">Position</p><div class="field-grid"><label class="field">X<input id="object-x" type="number" step="1" /></label><label class="field">Y<input id="object-y" type="number" step="1" /></label></div>
+            <p class="control-label size-label">Size</p><div class="field-grid"><label class="field">Width<input id="object-width" type="number" min="8" step="1" /></label><label class="field">Height<input id="object-height" type="number" min="8" step="1" /></label></div>
             <label class="field rotation-field">Rotation <span><input id="object-rotation" type="range" min="-180" max="180" value="0" /><output id="rotation-value">0°</output></span></label>
             <label class="check-row"><input id="lock-ratio" type="checkbox" checked /> Lock image proportions</label>
-            <p class="collider-help">Orange polygon is the character collision shape. Drag its points to tune the contour.</p>
+            <label class="check-row collision-toggle"><input id="object-collidable" type="checkbox" checked /> Blocks character movement</label>
+            <p class="collider-help">Orange outline follows the image alpha shape. Drag its points to refine the collision contour.</p>
+            <p class="interaction-note" id="interaction-note" hidden>Searchable prop · its checked view keeps this position and size.</p>
             <div class="object-actions"><button id="layer-back" class="tool-button" type="button">Send back</button><button id="layer-front" class="tool-button" type="button">Bring forward</button><button id="delete-object" class="tool-button danger" type="button">Delete</button></div>
             <p class="object-dimensions" id="object-dimensions"></p>
           </div>
-          <div class="layers"><div class="layer-heading"><p class="eyebrow">Room objects</p><span id="object-count">1</span></div><div class="layer-list" id="layer-list"></div></div>
-          <section class="wall-editor" aria-labelledby="wall-editor-title">
+          <details class="layers"><summary class="layer-heading"><span class="eyebrow">Room objects</span><span id="object-count">1</span></summary><div class="layer-list" id="layer-list"></div></details>
+          <section class="wall-editor" hidden aria-labelledby="wall-editor-title">
             <div class="wall-editor-head"><div><p class="eyebrow">Structure</p><h2 id="wall-editor-title">Wall design</h2></div><span id="wall-count" class="wall-count">0</span></div>
             <p class="wall-editor-copy">Add one wall block, then drag it or its end handles. Wall edits also update collision data.</p>
             <div class="wall-tools"><button id="wall-select-tool" class="tool-button active" type="button" aria-pressed="true">Select wall</button><button id="wall-draw-tool" class="tool-button" type="button" aria-pressed="false">＋ Add wall</button></div>
@@ -90,7 +101,7 @@
           </section>
         </aside>
       </section>
-      <p class="save-note">Put images in <code>assets/furniture</code> and run <code>node scripts/build-asset-manifest.mjs</code>. <strong>Save to project</strong> writes the map layout and collision shapes to <code>maps/room-01/map.json</code>; the play page reads that file directly.</p>
+      <p class="save-note">Use <a href="asset-importer.html">Prepare assets</a> to process props. <strong>Save to project</strong> writes the map layout and collision shapes to <code>maps/room-01/map.json</code>; the play page reads that file directly.</p>
     </main>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
   </div>
