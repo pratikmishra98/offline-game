@@ -136,12 +136,36 @@
   }
   function addWalls(scene) {
     const g = scene.add.graphics().setDepth(-100);
+    const segments = mapData.wallSegments || [];
+    const joined = (segment) => {
+      const ends = [{ x: segment.x1, y: segment.y1 }, { x: segment.x2, y: segment.y2 }];
+      const dx = segment.x2 - segment.x1, dy = segment.y2 - segment.y1, length = Math.hypot(dx, dy) || 1;
+      for (const other of segments) {
+        if (other === segment) continue;
+        const ox = other.x2 - other.x1, oy = other.y2 - other.y1, otherLength = Math.hypot(ox, oy) || 1;
+        const sin = Math.abs((dx * oy - dy * ox) / (length * otherLength));
+        if (sin > .22 && Math.abs(sin - 1) > .22) continue;
+        const reach = ((segment.width || 26) + (other.width || 26)) / 2 + 4;
+        for (const end of ends) {
+          const t = ((end.x - other.x1) * ox + (end.y - other.y1) * oy) / (otherLength * otherLength);
+          if (t < 0 || t > 1) continue;
+          const px = other.x1 + t * ox, py = other.y1 + t * oy;
+          if (Math.hypot(end.x - px, end.y - py) <= reach) { end.x = px; end.y = py; }
+        }
+      }
+      return ends;
+    };
+    const strokeWithRoundEnds = (a, b, width, color, alpha = 1) => {
+      g.lineStyle(width, color, alpha).beginPath().moveTo(a.x, a.y).lineTo(b.x, b.y).strokePath();
+      const radius = width / 2;
+      g.fillStyle(color, alpha).fillCircle(a.x, a.y, radius).fillCircle(b.x, b.y, radius);
+    };
     for (const wall of mapData.wallSegments || []) {
       const width = wall.width || mapData.style?.wallWidth || 26;
-      g.lineStyle(width + 6, Phaser.Display.Color.HexStringToColor("#17151b").color, 1).beginPath().moveTo(wall.x1, wall.y1).lineTo(wall.x2, wall.y2).strokePath();
-      g.lineStyle(width, Phaser.Display.Color.HexStringToColor(wall.stroke || "#672b38").color, 1).beginPath().moveTo(wall.x1, wall.y1).lineTo(wall.x2, wall.y2).strokePath();
-      g.lineStyle(Math.max(5, width * .42), 0x17151b, 1).beginPath().moveTo(wall.x1, wall.y1).lineTo(wall.x2, wall.y2).strokePath();
-      g.lineStyle(Math.max(1.5, width * .07), Phaser.Display.Color.HexStringToColor(wall.edgeStroke || "#d86a66").color, .85).beginPath().moveTo(wall.x1, wall.y1 - width * .29).lineTo(wall.x2, wall.y2 - width * .29).strokePath();
+      const [a, b] = joined(wall);
+      strokeWithRoundEnds(a, b, width + 6, 0x17151b);
+      strokeWithRoundEnds(a, b, width, Phaser.Display.Color.HexStringToColor(wall.stroke || "#672b38").color);
+      strokeWithRoundEnds(a, b, Math.max(5, width * .42), 0x17151b);
     }
   }
   function addLandscape(scene) {
@@ -261,7 +285,7 @@
     [mapData, settings, catalog] = await Promise.all([json("maps/room-01/map.json"), json("game-settings.json"), json("assets/asset-manifest.json")]);
     const canvasHost = document.createElement("div"); canvasHost.id = "game-container"; canvasHost.style.cssText = "position:absolute;inset:0;width:100%;height:100%;";
     svg.style.display = "none"; svg.parentElement.insertBefore(canvasHost, svg);
-    game = new Phaser.Game({ type: Phaser.AUTO, parent: canvasHost, width: innerWidth, height: innerHeight, backgroundColor: "#343640", scale: { mode: Phaser.Scale.RESIZE, width: "100%", height: "100%" }, render: { antialias: true, roundPixels: false, powerPreference: "high-performance" }, scene: sceneConfig() });
+    game = new Phaser.Game({ type: Phaser.AUTO, parent: canvasHost, width: innerWidth, height: innerHeight, resolution: Math.min(window.devicePixelRatio || 1, 2), backgroundColor: "#343640", scale: { mode: Phaser.Scale.RESIZE, width: "100%", height: "100%" }, render: { antialias: true, antialiasGL: true, pixelArt: false, roundPixels: false, powerPreference: "high-performance" }, scene: sceneConfig() });
   }
   start().catch((error) => fail(`${error.message} Open the game through a local web server so its JSON files can load.`));
 })();
