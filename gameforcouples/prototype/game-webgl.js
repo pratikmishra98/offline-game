@@ -2,13 +2,30 @@
   const svg = document.querySelector("main > svg");
   const stick = document.getElementById("move-stick");
   const knob = document.getElementById("stick-knob");
+  const kickButton = document.getElementById("kick-button");
+  const slapButton = document.getElementById("slap-button");
+  const puffButton = document.getElementById("puff-button");
   const actionButton = document.getElementById("interaction-action");
   const actionLabel = document.getElementById("interaction-label");
   const actionTarget = document.getElementById("interaction-target");
   const zoomButton = document.getElementById("zoom-cycle");
+  const settingsButton = document.getElementById("settings-toggle");
+  const graphicsMenu = document.getElementById("graphics-menu");
+  const graphicsStatus = document.getElementById("graphics-status");
+  const qualityButtons = [...document.querySelectorAll("[data-quality]")];
   const errorBox = document.getElementById("load-error");
   const input = { x: 0, y: 0, pointerId: null, destination: null, keys: new Set() };
   const zoomFactors = [1, 0.75, 0.5];
+  const qualityProfiles = {
+    low: { maxResolution: 1, scale: 0.75, label: "Low" },
+    medium: { maxResolution: 1.5, scale: 1, label: "Medium" },
+    high: { maxResolution: 2, scale: 1, label: "High" }
+  };
+  const QUALITY_STORAGE_KEY = "roomscape-graphics-quality";
+  const FLOOR_PATTERN_SIZE = 128;
+  const FLOOR_REPEAT_SIZE = 48;
+  const FULL_KICK_TAPS = 4;
+  const FULL_KICK_WINDOW_MS = 750;
   const materialColors = {
     grass: ["#63aa5b", "#39894c", "#8cc76b"], path: ["#d9b987", "#bb9a69", "#e6cfaa"],
     paving: ["#bfc9d5", "#7f91a6", "#e7edf4"], parking: ["#50505c", "#f2e5d5", "#676876"],
@@ -18,6 +35,78 @@
   };
   let game, mapData, settings, catalog, objects = [], player, camera, activeItem = null;
   let zoomStep = 0, lastPromptAt = 0;
+  let kickTapTimes = [], fullKickQueued = false;
+  let qualityPreference = readQualityPreference(), activeQuality = "medium";
+
+  function readQualityPreference() {
+    try {
+      const saved = localStorage.getItem(QUALITY_STORAGE_KEY);
+      return ["auto", "low", "medium", "high"].includes(saved) ? saved : "auto";
+    } catch { return "auto"; }
+  }
+  function detectQuality() {
+    const memory = Number(navigator.deviceMemory) || 0;
+    const cores = Number(navigator.hardwareConcurrency) || 0;
+    if ((memory && memory <= 3) || (cores && cores <= 4)) return "low";
+    if ((memory && memory <= 6) || cores === 5) return "medium";
+    if (memory || cores) return "high";
+    return matchMedia("(pointer: coarse)").matches ? "medium" : "high";
+  }
+  function resolutionScaleFor(profile) {
+    const dpr = Math.max(1, Number(window.devicePixelRatio) || 1);
+    const quality = qualityProfiles[profile] || qualityProfiles.medium;
+    return Math.max(0.65, Math.min(dpr, quality.maxResolution) * quality.scale);
+  }
+  function applyQualityResolution() {
+    if (!game?.scale?.gameSize) return;
+    const renderScale = resolutionScaleFor(activeQuality);
+    const host = game.canvas?.parentElement;
+    const bounds = host?.getBoundingClientRect();
+    const width = Math.max(1, Math.round((bounds?.width || window.innerWidth) * renderScale));
+    const height = Math.max(1, Math.round((bounds?.height || window.innerHeight) * renderScale));
+    if (game.scale.gameSize.width !== width || game.scale.gameSize.height !== height) {
+      game.scale.resize(width, height);
+    }
+  }
+  function chooseQuality(preference, save = true) {
+    qualityPreference = preference;
+    activeQuality = preference === "auto" ? detectQuality() : preference;
+    if (save) {
+      try { localStorage.setItem(QUALITY_STORAGE_KEY, preference); } catch { /* Use this selection for the current page. */ }
+    }
+    qualityButtons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.quality === preference)));
+    const profile = qualityProfiles[activeQuality];
+    const renderScale = resolutionScaleFor(activeQuality);
+    graphicsStatus.textContent = preference === "auto"
+      ? `Auto · ${profile.label} · ${renderScale.toFixed(2)}× render resolution`
+      : `${profile.label} · ${renderScale.toFixed(2)}× render resolution`;
+    applyQualityResolution();
+  }
+
+  chooseQuality(qualityPreference, false);
+  window.addEventListener("resize", applyQualityResolution);
+  settingsButton.addEventListener("click", () => {
+    const opening = graphicsMenu.hidden;
+    graphicsMenu.hidden = !opening;
+    settingsButton.setAttribute("aria-expanded", String(opening));
+    settingsButton.setAttribute("aria-label", opening ? "Close settings" : "Open settings");
+  });
+  qualityButtons.forEach((button) => button.addEventListener("click", () => {
+    chooseQuality(button.dataset.quality);
+  }));
+  document.addEventListener("pointerdown", (event) => {
+    if (graphicsMenu.hidden || graphicsMenu.contains(event.target) || settingsButton.contains(event.target)) return;
+    graphicsMenu.hidden = true;
+    settingsButton.setAttribute("aria-expanded", "false");
+    settingsButton.setAttribute("aria-label", "Open settings");
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || graphicsMenu.hidden) return;
+    graphicsMenu.hidden = true;
+    settingsButton.setAttribute("aria-expanded", "false");
+    settingsButton.setAttribute("aria-label", "Open settings");
+    settingsButton.focus();
+  });
 
   function fail(message) { errorBox.textContent = message; errorBox.style.display = "block"; }
   async function json(path) {
@@ -98,11 +187,13 @@
     if (!target || actionButton.hidden) return;
     const rect = game.canvas.getBoundingClientRect();
     const wv = camera.worldView, z = camera.zoom;
-    const x = rect.left + ((target.x + target.width / 2 - wv.x) * z);
-    const y = rect.top + ((target.y - 8 - wv.y) * z);
+    const scaleX = rect.width / game.scale.width, scaleY = rect.height / game.scale.height;
+    const x = rect.left + ((target.x + target.width / 2 - wv.x) * z * scaleX);
+    const y = rect.top + ((target.y - 8 - wv.y) * z * scaleY);
     actionButton.style.transform = `translate3d(${Math.max(64, Math.min(innerWidth - 64, x))}px,${Math.max(62, Math.min(innerHeight - 85, y))}px,0) translate(-50%,-100%)`;
   }
   function toggleAction() {
+    if (activeCharacterAction()) return;
     if (activeItem) {
       const asset = assetById(activeItem.assetId), image = activeItem._sprite;
       image.setTexture(`asset:${asset.id}`); activeItem = null; updateAction(); return;
@@ -115,23 +206,107 @@
   }
   actionButton.addEventListener("click", toggleAction);
 
+  function activeCharacterAction() {
+    const animation = player?.anims.currentAnim?.key;
+    if (player?.anims.isPlaying && animation && animation !== "walk" && animation !== "idle") {
+      return animation;
+    }
+    return null;
+  }
+
+  function playCharacterAction(animation) {
+    if (player.bodyVelocity) player.bodyVelocity.x = player.bodyVelocity.y = 0;
+    player.anims.timeScale = 1;
+    player.play(animation);
+  }
+
+  function requestKick() {
+    if (kickButton.hidden || activeItem || fullKickQueued) return;
+    const action = activeCharacterAction();
+    if (action && action !== "kick") return;
+
+    const now = performance.now();
+    kickTapTimes = kickTapTimes.filter((time) => now - time <= FULL_KICK_WINDOW_MS);
+    kickTapTimes.push(now);
+    if (kickTapTimes.length >= FULL_KICK_TAPS) {
+      kickTapTimes = [];
+      kickButton.classList.add("kick-control-full");
+      if (action) fullKickQueued = true;
+      else playCharacterAction("full-kick");
+    } else if (!action) {
+      playCharacterAction("kick");
+    }
+  }
+  kickButton.addEventListener("click", requestKick);
+
+  function requestGesture(button, animation) {
+    if (button.hidden || activeItem || activeCharacterAction()) return;
+    kickTapTimes = [];
+    playCharacterAction(animation);
+  }
+  slapButton.addEventListener("click", () => requestGesture(slapButton, "slap"));
+  puffButton.addEventListener("click", () => requestGesture(puffButton, "puff"));
+
   function patternCanvas(key) {
     const [base, line, accent] = materialColors[key] || materialColors.hall;
-    const canvas = document.createElement("canvas"); canvas.width = canvas.height = 48;
-    const c = canvas.getContext("2d"); c.fillStyle = base; c.fillRect(0, 0, 48, 48);
-    c.strokeStyle = line; c.globalAlpha = 0.55; c.lineWidth = key === "brick" ? 1.5 : 1;
-    if (key === "wood") { for (let x = 0; x <= 48; x += 16) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, 48); c.stroke(); } }
-    else if (key === "grass" || key === "dirt") { c.globalAlpha = 0.3; c.fillStyle = accent; for (let i = 0; i < 18; i++) { c.fillRect((i * 17) % 48, (i * 29) % 48, 2, 2); } }
-    else { for (let x = 0; x <= 48; x += key === "brick" ? 24 : 24) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, 48); c.stroke(); } for (let y = 0; y <= 48; y += key === "brick" ? 12 : 24) { c.beginPath(); c.moveTo(0, y); c.lineTo(48, y); c.stroke(); } }
-    if (key === "brick") { c.beginPath(); c.moveTo(12, 0); c.lineTo(12, 12); c.moveTo(36, 12); c.lineTo(36, 24); c.moveTo(12, 24); c.lineTo(12, 36); c.moveTo(36, 36); c.lineTo(36, 48); c.stroke(); }
-    c.globalAlpha = 1; return canvas;
+    const size = FLOOR_PATTERN_SIZE;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext("2d", { alpha: false });
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, size, size);
+
+    if (key === "grass" || key === "dirt") {
+      const pixels = (worldUnits) => Math.round(worldUnits * size / FLOOR_REPEAT_SIZE);
+      const dot = pixels(2);
+      ctx.globalAlpha = 0.3;
+      ctx.fillStyle = accent;
+      for (let i = 0; i < 18; i++) {
+        const x = pixels((i * 17) % FLOOR_REPEAT_SIZE);
+        const y = pixels((i * 29) % FLOOR_REPEAT_SIZE);
+        ctx.fillRect(x, y, dot, dot);
+      }
+      return canvas;
+    }
+
+    // Fill whole texels so the grout is sharp before the camera scales it.
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = line;
+    ctx.beginPath();
+    if (key === "brick") {
+      const rowHeight = size / 4;
+      for (let row = 0; row < 4; row++) {
+        const y = row * rowHeight;
+        const offset = (row % 2) * size / 4;
+        ctx.rect(0, y, size, 4);
+        ctx.rect(offset, y, 4, rowHeight);
+        ctx.rect(offset + size / 2, y, 4, rowHeight);
+      }
+    } else if (key === "wood") {
+      for (let column = 0; column < 3; column++) {
+        ctx.rect(Math.round(column * size / 3), 0, 3, size);
+      }
+    } else {
+      for (let stride = 0; stride < size; stride += size / 2) {
+        ctx.rect(stride, 0, 3, size);
+        ctx.rect(0, stride, size, 3);
+      }
+    }
+    ctx.fill();
+    return canvas;
   }
   function addFloor(scene) {
+    const tileScale = FLOOR_REPEAT_SIZE / FLOOR_PATTERN_SIZE;
     const regions = mapData.floor.regions || [mapData.floor];
     for (const region of regions) {
-      const key = `floor:${region.material || "hall"}`;
-      if (!scene.textures.exists(key)) scene.textures.addCanvas(key, patternCanvas(region.material || "hall"));
-      scene.add.tileSprite(region.x + region.width / 2, region.y + region.height / 2, region.width, region.height, key).setDepth(-1000).setTileScale(1, 1);
+      const material = region.material || "hall";
+      const key = `floor:${material}`;
+      if (!scene.textures.exists(key)) scene.textures.addCanvas(key, patternCanvas(material));
+      scene.add.tileSprite(region.x, region.y, region.width, region.height, key)
+        .setOrigin(0)
+        .setDepth(-1000)
+        .setTileScale(tileScale)
+        .setTilePosition((region.x % FLOOR_REPEAT_SIZE) / tileScale, (region.y % FLOOR_REPEAT_SIZE) / tileScale);
     }
   }
   function addWalls(scene) {
@@ -191,9 +366,11 @@
   }
 
   function sceneConfig() {
+    const spriteSettings = settings.player.sprite;
+    const useDrawnArt = spriteSettings.art === "drawn" && typeof RoomscapeExplorer !== "undefined";
     return {
       preload() {
-        this.load.image("walk-atlas", settings.player.sprite.src);
+        if (!useDrawnArt) this.load.image("walk-atlas", spriteSettings.src);
         const needed = new Set();
         for (const item of mapData.objects) {
           const asset = assetById(item.assetId);
@@ -211,8 +388,11 @@
         const scene = this;
         addFloor(scene); addLandscape(scene); addWalls(scene);
         for (const label of mapData.labels || []) scene.add.text(label.x, label.y, label.text || "", { fontFamily: "system-ui", fontSize: "16px", color: "#624b42", fontStyle: "bold", alpha: .65 }).setDepth(-50);
-        const atlas = scene.textures.get("walk-atlas");
-        settings.player.sprite.frames.forEach((frame, index) => atlas.add(`walk:${index}`, 0, frame.x, frame.y, frame.width, frame.height));
+        const playerArt = useDrawnArt ? RoomscapeExplorer.createAtlas() : spriteSettings;
+        const atlas = useDrawnArt
+          ? scene.textures.addCanvas("walk-atlas", playerArt.canvas)
+          : scene.textures.get("walk-atlas");
+        playerArt.frames.forEach((frame, index) => atlas.add(`walk:${index}`, 0, frame.x, frame.y, frame.width, frame.height));
         objects = mapData.objects.map((item) => {
           const asset = assetById(item.assetId); if (!asset) return null;
           const sprite = scene.add.image(item.x + item.width / 2, item.y + item.height / 2, `asset:${asset.id}`).setOrigin(.5, .5).setDisplaySize(item.width, item.height).setRotation((Number(item.rotation) || 0) * Math.PI / 180).setDepth(Number(item.z) || 0);
@@ -222,18 +402,63 @@
           item._bounds = points ? { left: Math.min(...points.map(p => p.x)), top: Math.min(...points.map(p => p.y)), right: Math.max(...points.map(p => p.x)), bottom: Math.max(...points.map(p => p.y)) } : null;
           return item;
         }).filter(Boolean);
-        const frame = settings.player.sprite.frames[settings.player.sprite.idleFrame];
-        player = scene.add.sprite(settings.player.spawn.x, settings.player.spawn.y, "walk-atlas", `walk:${settings.player.sprite.idleFrame}`).setOrigin(.5, 1).setDisplaySize(frame.width * settings.player.sprite.displayHeight / frame.height, settings.player.sprite.displayHeight).setDepth(10000);
-        const walk = settings.player.sprite.walkFrames.map((index) => ({ key: "walk-atlas", frame: `walk:${index}` }));
+        const displayHeight = spriteSettings.displayHeight;
+        const displayWidth = Math.max(...playerArt.frames.map((pose) => pose.width / pose.height * displayHeight));
+        const idle = { key: "walk-atlas", frame: `walk:${playerArt.idleFrame}` };
+        player = scene.add.sprite(settings.player.spawn.x, settings.player.spawn.y, idle.key, idle.frame).setOrigin(.5, 1).setDisplaySize(displayWidth, displayHeight).setDepth(10000);
+        player.on("animationupdate", () => player.setDisplaySize(displayWidth, displayHeight));
+        const walk = playerArt.walkFrames.map((index) => ({ key: "walk-atlas", frame: `walk:${index}` }));
+        scene.anims.create({ key: "idle", frames: [idle], frameRate: 1 });
+        player.play("idle");
         if (walk.length) {
-          scene.anims.create({ key: "walk", frames: walk, frameRate: settings.player.sprite.walkFps, repeat: -1 });
-          scene.anims.create({ key: "idle", frames: [{ key: "walk-atlas", frame: `walk:${settings.player.sprite.idleFrame}` }], frameRate: 1, repeat: -1 });
-          player.play("idle");
+          scene.anims.create({ key: "walk", frames: walk, frameRate: playerArt.walkFps, repeat: -1 });
         }
-        camera = scene.cameras.main; camera.setBounds(mapData.bounds.left, mapData.bounds.top, mapData.bounds.right - mapData.bounds.left, mapData.bounds.bottom - mapData.bounds.top); camera.startFollow(player, true, .12, .12);
+        if (useDrawnArt && playerArt.kickFrames?.length && playerArt.fullKickFrames?.length) {
+          const actions = [
+            { key: "kick", indices: playerArt.kickFrames, frameRate: playerArt.kickFps },
+            { key: "full-kick", indices: playerArt.fullKickFrames, frameRate: playerArt.fullKickFps },
+            { key: "slap", indices: playerArt.slapFrames, frameRate: playerArt.slapFps, button: slapButton },
+            { key: "puff", indices: playerArt.puffFrames, frameRate: playerArt.puffFps, button: puffButton }
+          ];
+          for (const { key, indices, frameRate, button } of actions) {
+            if (!indices?.length) continue;
+            const frames = indices.map((index) => ({ key: "walk-atlas", frame: `walk:${index}` }));
+            scene.anims.create({ key, frames, frameRate });
+            if (button) {
+              player.on(`animationcomplete-${key}`, () => player.play("idle"));
+              button.hidden = false;
+            }
+          }
+          player.on("animationcomplete-kick", () => {
+            if (fullKickQueued) {
+              fullKickQueued = false;
+              playCharacterAction("full-kick");
+            } else {
+              player.play("idle");
+            }
+          });
+          player.on("animationcomplete-full-kick", () => {
+            kickButton.classList.remove("kick-control-full");
+            player.play("idle");
+          });
+          kickButton.hidden = false;
+        }
+        camera = scene.cameras.main;
+        camera.setBounds(mapData.bounds.left, mapData.bounds.top, mapData.bounds.right - mapData.bounds.left, mapData.bounds.bottom - mapData.bounds.top);
+        camera.startFollow(player, false);
         const zoom = () => camera.setZoom((game.scale.height / mapData.viewport.worldHeight) * settings.camera.zoom * zoomFactors[zoomStep]);
-        zoom(); scene.scale.on("resize", zoom);
-        scene.input.keyboard.on("keydown", (event) => { const k = event.key.length === 1 ? event.key.toLowerCase() : event.key; input.keys.add(k); if (k === "e") toggleAction(); });
+        zoom();
+        scene.scale.on("resize", () => { applyQualityResolution(); zoom(); });
+        applyQualityResolution();
+        scene.input.keyboard.on("keydown", (event) => {
+          const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+          input.keys.add(key);
+          if (key === "e") toggleAction();
+          if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
+          if (key === "k") requestKick();
+          if (key === "f") requestGesture(slapButton, "slap");
+          if (key === "g") requestGesture(puffButton, "puff");
+        });
         scene.input.keyboard.on("keyup", (event) => input.keys.delete(event.key.length === 1 ? event.key.toLowerCase() : event.key));
         scene.input.on("pointerdown", (p) => { if (p.button !== 0 || p.event.target === stick || p.event.target.closest?.("button")) return; input.destination = camera.getWorldPoint(p.x, p.y); });
         scene.events.on("update", (time, delta) => update(scene, Math.min(delta / 1000, .04), time));
@@ -241,20 +466,42 @@
     };
   }
   function update(scene, dt, now) {
+    if (activeCharacterAction()) return;
     const move = { x: 0, y: 0 };
     for (const [key, x, y] of [["ArrowLeft", -1, 0], ["a", -1, 0], ["ArrowRight", 1, 0], ["d", 1, 0], ["ArrowUp", 0, -1], ["w", 0, -1], ["ArrowDown", 0, 1], ["s", 0, 1]]) if (input.keys.has(key)) { move.x += x; move.y += y; }
-    if (!move.x && !move.y && Math.hypot(input.x, input.y) > .06) { move.x = input.x; move.y = input.y; }
+    if (!move.x && !move.y) {
+      const stickLength = Math.hypot(input.x, input.y);
+      const deadzone = 0.06;
+      if (stickLength > deadzone) {
+        // Remap the usable joystick range so motion starts continuously after
+        // the deadzone, with a slightly more responsive curve at mid deflection.
+        const normalized = Math.min(1, (stickLength - deadzone) / (1 - deadzone));
+        const intensity = Math.pow(normalized, 0.82);
+        move.x = input.x / stickLength * intensity;
+        move.y = input.y / stickLength * intensity;
+      }
+    }
     if (!move.x && !move.y && input.destination) {
       const dx = input.destination.x - player.x, dy = input.destination.y - player.y, distance = Math.hypot(dx, dy);
       if (distance < 4) input.destination = null; else { const scale = Math.min(1, distance / 55); move.x = dx / distance * scale; move.y = dy / distance * scale; }
     }
     const m = settings.player.movement, length = Math.hypot(move.x, move.y);
-    if (length > .06 && !activeItem) {
+    if (length > .001 && !activeItem) {
       const intensity = Math.min(1, length), nx = move.x / length, ny = move.y / length;
       player.bodyVelocity ||= { x: 0, y: 0 };
-      player.bodyVelocity.x += nx * m.acceleration * intensity * dt; player.bodyVelocity.y += ny * m.acceleration * intensity * dt;
-      const speed = Math.hypot(player.bodyVelocity.x, player.bodyVelocity.y), target = m.maximumSpeed * intensity;
-      if (speed > target) { player.bodyVelocity.x *= target / speed; player.bodyVelocity.y *= target / speed; }
+      // Approach the requested velocity with a bounded acceleration. This
+      // avoids snapping down to a lower speed whenever the stick moves inward.
+      const targetX = nx * m.maximumSpeed * intensity, targetY = ny * m.maximumSpeed * intensity;
+      const deltaX = targetX - player.bodyVelocity.x, deltaY = targetY - player.bodyVelocity.y;
+      const deltaLength = Math.hypot(deltaX, deltaY), maxDelta = m.acceleration * dt;
+      if (deltaLength <= maxDelta) {
+        player.bodyVelocity.x = targetX;
+        player.bodyVelocity.y = targetY;
+      } else {
+        const blend = maxDelta / deltaLength;
+        player.bodyVelocity.x += deltaX * blend;
+        player.bodyVelocity.y += deltaY * blend;
+      }
     } else if (player.bodyVelocity) {
       const drag = Math.exp(-m.drag * dt); player.bodyVelocity.x *= drag; player.bodyVelocity.y *= drag;
       if (Math.hypot(player.bodyVelocity.x, player.bodyVelocity.y) < 2) player.bodyVelocity.x = player.bodyVelocity.y = 0;
@@ -262,10 +509,17 @@
     const v = player.bodyVelocity || { x: 0, y: 0 }, oldX = player.x, oldY = player.y, nextX = oldX + v.x * dt, nextY = oldY + v.y * dt;
     if (Math.abs(nextX - oldX) > .01) { if (canOccupy(nextX, oldY)) player.x = nextX; else { v.x = 0; input.destination = null; } }
     if (Math.abs(nextY - oldY) > .01) { if (canOccupy(player.x, nextY)) player.y = nextY; else { v.y = 0; input.destination = null; } }
-    if (Math.abs(v.x) > 2) player.setFlipX(v.x < 0);
-    const walking = Math.hypot(v.x, v.y) > 7 && settings.player.sprite.walkingEnabled;
-    if (walking && player.anims.currentAnim?.key !== "walk") player.play("walk");
-    if (!walking && player.anims.currentAnim?.key !== "idle") player.play("idle");
+    const dx = player.x - oldX, dy = player.y - oldY;
+    // Keep the previous facing when the player is moving mostly up or down.
+    if (Math.abs(dx) > Math.max(6 * dt, Math.abs(dy) * 0.25)) player.setFlipX(dx < 0);
+    const speed = dt > 0 ? Math.hypot(dx, dy) / dt : 0;
+    const wasWalking = player.anims.currentAnim?.key === "walk";
+    const walking = speed > (wasWalking ? 5 : 10) && settings.player.sprite.walkingEnabled;
+    if (walking !== wasWalking) player.play(walking ? "walk" : "idle");
+    if (walking) {
+      const speedRatio = Math.min(1, speed / m.maximumSpeed);
+      player.anims.timeScale = 0.42 + 0.58 * Math.sqrt(speedRatio);
+    }
     if (now - lastPromptAt > 60) { lastPromptAt = now; updateAction(); }
     placeAction();
   }
@@ -285,7 +539,8 @@
     [mapData, settings, catalog] = await Promise.all([json("maps/room-01/map.json"), json("game-settings.json"), json("assets/asset-manifest.json")]);
     const canvasHost = document.createElement("div"); canvasHost.id = "game-container"; canvasHost.style.cssText = "position:absolute;inset:0;width:100%;height:100%;";
     svg.style.display = "none"; svg.parentElement.insertBefore(canvasHost, svg);
-    game = new Phaser.Game({ type: Phaser.AUTO, parent: canvasHost, width: innerWidth, height: innerHeight, resolution: Math.min(window.devicePixelRatio || 1, 2), backgroundColor: "#343640", scale: { mode: Phaser.Scale.RESIZE, width: "100%", height: "100%" }, render: { antialias: true, antialiasGL: true, pixelArt: false, roundPixels: false, powerPreference: "high-performance" }, scene: sceneConfig() });
+    const renderScale = resolutionScaleFor(activeQuality);
+    game = new Phaser.Game({ type: Phaser.AUTO, parent: canvasHost, width: Math.round(innerWidth * renderScale), height: Math.round(innerHeight * renderScale), backgroundColor: "#343640", scale: { mode: Phaser.Scale.NONE, width: Math.round(innerWidth * renderScale), height: Math.round(innerHeight * renderScale) }, render: { antialias: true, antialiasGL: true, pixelArt: false, roundPixels: false, powerPreference: "high-performance" }, scene: sceneConfig() });
   }
   start().catch((error) => fail(`${error.message} Open the game through a local web server so its JSON files can load.`));
 })();

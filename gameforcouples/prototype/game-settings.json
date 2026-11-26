@@ -6,6 +6,7 @@
       "y": 1320
     },
     "sprite": {
+      "art": "drawn",
       "src": "assets/explorer-walk-atlas.webp",
       "frames": [
         {
