@@ -6,7 +6,9 @@
   <meta name="theme-color" content="#f4f4ef" />
   <title>Map Designer · Roomscape</title>
   <link rel="stylesheet" href="map-designer.css?v=minimap-zoom-presets-20261002" />
-  <script src="map-designer.js?v=minimap-zoom-presets-20261002" defer></script>
+  <script src="room-walls.js" defer></script>
+  <script src="gym-equipment.js" defer></script>
+  <script src="map-designer.js?v=campus-gym" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -29,7 +31,7 @@
       <section class="workspace" aria-label="Room map designer">
         <section class="map-panel" aria-label="Room canvas">
           <div class="canvas-toolbar">
-            <div class="canvas-title"><span class="live-dot"></span><strong>School map</strong><span id="canvas-object-summary">16 placed props</span></div>
+            <div class="canvas-title"><span class="live-dot"></span><strong>Campus map</strong><span id="canvas-object-summary"></span></div>
             <div class="canvas-tools"><label class="snap-toggle"><input id="snap-grid" type="checkbox" checked /><span>Snap</span></label><div class="zoom-presets" role="group" aria-label="Zoom out level"><button type="button" data-zoom-out-level="1" aria-pressed="true" aria-label="1× default zoom" title="1× default">1×</button><button type="button" data-zoom-out-level="2" aria-pressed="false" aria-label="Zoom out 2×" title="Zoom out 2×">2×</button><button type="button" data-zoom-out-level="3" aria-pressed="false" aria-label="Zoom out 3×" title="Zoom out 3×">3×</button></div><output id="zoom-value" aria-live="polite">1×</output></div>
           </div>
           <div class="stage-viewport" id="stage-viewport">
@@ -53,6 +55,7 @@
                 <pattern id="floor-tile" width="32" height="32" patternUnits="userSpaceOnUse"><rect width="32" height="32" fill="#dce2e8"/><path d="M0 0H32V32H0Z" fill="none" stroke="#8191a3" stroke-width=".7" opacity=".43"/></pattern>
                 <pattern id="floor-wood" width="28" height="48" patternUnits="userSpaceOnUse"><rect width="28" height="48" fill="#d7a15f"/><path d="M0 0V48M14 0V48M27 0V48M2 13H12M16 35H26" stroke="#a96e3e" stroke-width="1.1" opacity=".53"/></pattern>
                 <pattern id="floor-blue" width="32" height="32" patternUnits="userSpaceOnUse"><rect width="32" height="32" fill="#78a9ba"/><path d="M0 0H32V32H0Z" fill="none" stroke="#557d90" stroke-width="1" opacity=".45"/></pattern>
+                <pattern id="floor-gym" width="48" height="48" patternUnits="userSpaceOnUse"><rect width="48" height="48" fill="#546570"/><path d="M48 0H0V48" fill="none" stroke="#293942"/><path d="M6 9h1M15 20h1M33 14h1M9 34h1M37 38h1M23 5h1" stroke="#9fb5ba" opacity=".4"/></pattern>
                 <pattern id="designer-grid" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#eff1e9" stroke-width=".8" opacity=".58"/></pattern>
               </defs>
               <g id="fixed-room"></g>

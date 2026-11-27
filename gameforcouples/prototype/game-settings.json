@@ -61,6 +61,7 @@
       "maximumSpeed": 150,
       "drag": 8.5
     },
+    "puff": { "distance": 92 },
     "collision": {
       "radius": 10,
       "footOffset": 8

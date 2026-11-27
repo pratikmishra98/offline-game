@@ -19,17 +19,42 @@
       #room { animation: reveal .45s ease-out both; transform-origin: center; }
       @keyframes reveal { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: scale(1); } }
     }
-    .touch-controls { position: fixed; z-index: 5; right: max(18px, env(safe-area-inset-right)); left: auto; bottom: max(18px, env(safe-area-inset-bottom)); display: block; width: 124px; height: 124px; padding: 0; border: 0; background: transparent; touch-action: none; user-select: none; -webkit-user-select: none; }
-    .stick-base { position: absolute; inset: 0; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.27); border-radius: 50%; background: rgba(24,26,32,.27); box-shadow: inset 0 1px 8px rgba(0,0,0,.1); backdrop-filter: blur(3px); }
-    .stick-knob { width: 48px; height: 48px; border: 1px solid rgba(255,255,255,.6); border-radius: 50%; background: rgba(240,241,236,.8); box-shadow: 0 2px 10px rgba(0,0,0,.18); transform: translate(0,0); }
+    .touch-controls { position: fixed; z-index: 5; left: max(18px, env(safe-area-inset-left)); bottom: max(18px, env(safe-area-inset-bottom)); display: block; width: clamp(92px, 34vw, 124px); aspect-ratio: 1; padding: 0; border: 0; background: transparent; touch-action: none; user-select: none; -webkit-user-select: none; }
+    .stick-base { position: absolute; inset: 0; display: grid; place-items: center; border: 2px solid #a9b9cf80; border-radius: 50%; background: #252736c9; box-shadow: inset 0 0 0 4px #18202a70, 0 4px 0 #19162280; }
+    .stick-base::before { content: ""; position: absolute; inset: 13%; border: 1px solid #c9d4e642; border-radius: 50%; }
+    .stick-knob { width: 48px; height: 48px; border: 1px solid #e2edff; border-radius: 50%; background: radial-gradient(circle at 38% 30%, #f1f6ff, #b9c9e1 74%); box-shadow: inset 0 -3px #7b91ae70, 0 3px 8px #10121e90; transform: translate(0,0); }
     .touch-controls:focus-visible .stick-base { outline: 3px solid rgba(255,255,255,.72); outline-offset: 3px; }
-    .character-actions { position: fixed; z-index: 7; right: max(18px, env(safe-area-inset-right)); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 136px); display: flex; gap: 8px; }
-    .character-action { min-width: 58px; min-height: 48px; padding: 0 13px; border: 1px solid rgba(255,255,255,.64); border-radius: 24px; background: #282531; color: #ffd166; font: 700 14px/1 system-ui, sans-serif; cursor: pointer; touch-action: manipulation; }
-    .character-action[hidden] { display: none; }
-    .kick-control-full { border-color: #ffd166; background: #783b33; }
-    .character-action:active { transform: scale(.95); }
-    .character-action:focus-visible { outline: 2px solid #78c3fb; outline-offset: 3px; }
+    .character-actions { position: fixed; z-index: 7; right: max(18px, env(safe-area-inset-right)); bottom: max(18px, calc(env(safe-area-inset-bottom) + 8px)); display: grid; width: min(151px, calc(53vw - 18px)); grid-template-columns: minmax(0, 1fr) minmax(0, 1.24fr); align-items: end; justify-items: center; gap: 11px; }
+    .character-action, .move-option { border: 1px solid #7a7287; background: #292634; color: #f3ebff; cursor: pointer; touch-action: manipulation; }
+    .character-action { display: grid; place-items: center; width: min(100%, 58px); aspect-ratio: 1; min-height: 48px; padding: 0; border-radius: 50%; background: linear-gradient(#454255, #282434 80%); box-shadow: inset 0 0 0 3px #a59bb229, inset 0 1px 0 #d5ccdf6b, 0 4px 0 #1b1725, 0 6px 8px #19162250; }
+    .character-actions[hidden], .character-actions [hidden] { display: none; }
+    .controller-icon { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+    .jump-action { color: #c2e9ff; }
+    .attack-action { width: min(100%, 78px); border-color: #ffe5a5; background: linear-gradient(#ffe49e, #ffc655 76%); color: #3e2a40; box-shadow: inset 0 0 0 4px #fff1bd70, inset 0 -4px #df9b314d, 0 5px 0 #80552c, 0 7px 10px #19162260; }
+    .attack-action .controller-icon { width: 34px; height: 34px; stroke-width: 1.65; }
+    .attack-action[data-move="kick"].kick-control-full { background: linear-gradient(#ef718c, #bd3e5f); border-color: #ffc8d5; color: #fff8e7; }
+    .attack-action:disabled { opacity: .56; cursor: default; }
+    .character-action:not(:disabled):active, .move-option:active { transform: translateY(2px); box-shadow: 0 0 0 2px #ffe2a1; }
+    .character-action:focus-visible, .move-option:focus-visible { outline: 2px solid #78c3fb; outline-offset: 3px; }
+    .moves-toggle { grid-area: 1 / 2; width: 46px; min-height: 46px; margin-bottom: 4px; color: #d3cade; }
+    .moves-toggle .controller-icon { width: 20px; height: 20px; }
+    .moves-toggle[aria-expanded="true"] { border-color: #e6af51; color: #ffd166; }
+    .move-picker { position: absolute; bottom: calc(100% + 10px); right: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 150px; padding: 6px; border: 1px solid #716475; border-radius: 18px; background: #211e2a; box-shadow: 0 3px 12px #14101b70; }
+    .move-option { display: grid; place-items: center; gap: 2px; min-height: 55px; padding: 4px; border-color: transparent; border-radius: 12px; font: 650 11px/1 system-ui, sans-serif; }
+    .move-option .controller-icon { width: 22px; height: 22px; }
+    .move-option[aria-pressed="true"] { border-color: #e6af51; color: #ffd166; }
+    @media (orientation: landscape) and (max-height: 430px) {
+      .move-picker { bottom: 0; right: calc(100% + 8px); }
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .character-action { transition: transform .12s, box-shadow .12s, border-color .12s; }
+      .move-picker { animation: show-moves .14s ease-out both; }
+      @keyframes show-moves { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    .workout-panel { position: fixed; z-index: 7; top: max(62px, calc(env(safe-area-inset-top) + 48px)); left: 50%; transform: translateX(-50%); display: grid; gap: 6px; width: max-content; max-width: min(190px, 62vw); padding: 9px 13px; border: 1px solid #e6af51; border-radius: 13px; background: #252331; color: #fff3db; font: 700 12px/1.2 system-ui, sans-serif; text-align: center; pointer-events: none; }
+    .workout-panel[hidden], .workout-panel [hidden] { display: none; }
+    .workout-panel progress { width: 100%; min-width: 112px; height: 6px; accent-color: #ffd166; }
     .designer-link { position: fixed; z-index: 6; top: max(12px, env(safe-area-inset-top)); right: max(66px, calc(env(safe-area-inset-right) + 54px)); display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid rgba(255,255,255,.23); border-radius: 11px; background: rgba(29,31,38,.45); color: #f7f6f0; font: 600 17px/1 ui-sans-serif, sans-serif; text-decoration: none; backdrop-filter: blur(5px); }
     .designer-link:focus-visible { outline: 2px solid white; outline-offset: 3px; }
     .settings-toggle { position:fixed; z-index:9; top:max(12px,env(safe-area-inset-top)); right:max(12px,env(safe-area-inset-right)); display:grid; width:42px; height:42px; place-items:center; padding:0; border:1px solid rgba(255,255,255,.27); border-radius:13px; background:rgba(29,31,38,.88); box-shadow:0 3px 12px rgba(13,14,19,.25); color:#fff8e7; font:600 21px/1 system-ui,sans-serif; cursor:pointer; touch-action:manipulation; backdrop-filter:blur(7px); }
@@ -47,13 +72,9 @@
     .zoom-cycle { position:fixed; z-index:7; top:max(64px,calc(env(safe-area-inset-top) + 52px)); right:max(12px,env(safe-area-inset-right)); display:grid; width:54px; height:54px; place-items:center; padding:0; border:2px solid rgba(255,255,255,.7); border-radius:50%; background:rgba(29,31,38,.92); box-shadow:0 4px 16px rgba(13,14,19,.38); backdrop-filter:blur(7px); color:#FFD166; font:750 13px/1 system-ui,sans-serif; font-variant-numeric:tabular-nums; cursor:pointer; touch-action:manipulation; }
     .zoom-cycle:active { transform:scale(.94); }
     .zoom-cycle:focus-visible { outline:2px solid #78C3FB; outline-offset:3px; }
-    .interaction-action { position: fixed; z-index: 8; top: 0; left: 0; display: inline-flex; min-width: 116px; min-height: 48px; align-items: center; gap: 9px; padding: 7px 13px 7px 9px; border: 2px solid #ffe09a; border-radius: 15px; background: #4a2434; box-shadow: 0 4px 14px rgba(20,17,23,.35); color: #fff8e7; font: 700 13px/1.15 system-ui,sans-serif; cursor: pointer; touch-action: manipulation; transform: translate(-50%,-100%); will-change:transform; animation: action-pop .16s ease-out both; }
-    .interaction-action[hidden] { display: none; }
-    .interaction-action:focus-visible { outline: 3px solid #78C3FB; outline-offset: 3px; }
-    .interaction-icon { display:grid; width:29px; height:29px; flex:0 0 29px; place-items:center; border-radius:9px; background:#FFD166; color:#4a2434; font-size:19px; font-weight:800; }
-    .interaction-copy { display:grid; gap:2px; text-align:left; }
-    .interaction-copy small { max-width:140px; overflow:hidden; color:#ead9bd; font-size:10px; font-weight:550; text-overflow:ellipsis; white-space:nowrap; }
-    @keyframes action-pop { from { opacity:0; scale:.92; } to { opacity:1; scale:1; } }
+    .interaction-action { grid-area: 1 / 1; width: min(100%, 52px); }
+    .interaction-action:not(:disabled) { border-color: #e6af51; color: #ffe2a1; }
+    .interaction-action:disabled { opacity: .5; cursor: default; }
   </style>
 </head>
 <body>
@@ -122,19 +143,53 @@
     <small class="graphics-status" id="graphics-status" aria-live="polite">Auto quality is being detected…</small>
   </section>
   <button class="zoom-cycle" id="zoom-cycle" type="button" aria-label="Change camera zoom, currently 1×" title="Tap to change zoom">1×</button>
-  <button class="interaction-action" id="interaction-action" type="button" hidden aria-live="polite"><span class="interaction-icon" aria-hidden="true">⌕</span><span class="interaction-copy"><strong id="interaction-label">Check</strong><small id="interaction-target"></small></span></button>
-  <div class="character-actions" role="group" aria-label="Explorer moves">
-    <button class="character-action" id="puff-button" type="button" aria-keyshortcuts="G" title="Puff (G)" hidden>Puff</button>
-    <button class="character-action" id="slap-button" type="button" aria-keyshortcuts="F" title="Slap (F)" hidden>Slap</button>
-    <button class="character-action" id="kick-button" type="button" aria-keyshortcuts="K" title="Kick (K). Tap four times quickly for a full kick." hidden>Kick</button>
-  </div>
   <button class="touch-controls" id="move-stick" type="button" aria-label="Move the explorer with the virtual joystick">
     <span class="stick-base"><span class="stick-knob" id="stick-knob"></span></span>
   </button>
-  <p class="sr-only" id="game-hint">Use the arrow keys or W A S D, click or tap a destination, or drag the virtual joystick to move. Use Kick or press K to kick. Tap four times quickly for a full kick. Use Slap or press F to slap. Use Puff or press G for a cartoon puff. Approach a searchable prop and choose Check, or press E, to inspect it. The explorer stops at walls and furniture.</p>
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <symbol id="hud-grab" viewBox="0 0 24 24"><path d="M5 3H3v4m16-4h2v4M5 21H3v-4m16 4h2v-4M8 13V8a1.4 1.4 0 0 1 2.8 0v3-4a1.4 1.4 0 0 1 2.8 0v4-2a1.4 1.4 0 0 1 2.8 0v4l.6-1a1.4 1.4 0 0 1 2.5 1.2l-1.7 3.4a4 4 0 0 1-3.6 2.2h-2.1a4 4 0 0 1-3-1.3l-2.5-2.8a1.4 1.4 0 0 1 1.4-2.1Z"/></symbol>
+    <symbol id="hud-throw" viewBox="0 0 24 24"><path d="M4 19C6 11 11 7 20 5m-6-1 6 1-1 6M4 11l2-2m5 9 2-2"/></symbol>
+    <symbol id="hud-check" viewBox="0 0 24 24"><circle cx="10" cy="10" r="5.5"/><path d="m14 14 5 5"/></symbol>
+    <symbol id="hud-done" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="hud-workout" viewBox="0 0 24 24"><rect x="4" y="6" width="4" height="12" rx="1"/><rect x="16" y="6" width="4" height="12" rx="1"/><path d="M8 12h8M2 10v4m20-4v4"/></symbol>
+    <symbol id="hud-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+    <symbol id="hud-jump" viewBox="0 0 24 24"><path d="M12 17V4m-5 5 5-5 5 5M6 20h12"/></symbol>
+    <symbol id="hud-moves" viewBox="0 0 24 24"><rect x="4" y="4" width="5" height="5" rx="1"/><rect x="15" y="4" width="5" height="5" rx="1"/><rect x="4" y="15" width="5" height="5" rx="1"/><rect x="15" y="15" width="5" height="5" rx="1"/></symbol>
+    <symbol id="hud-punch" viewBox="0 0 24 24"><path d="m4 17 2-2-1-3a2 2 0 0 1 .4-2l4.5-4.5a2 2 0 0 1 3 0l.5.5.8-.8a2 2 0 0 1 2.8 0l.7.7.6-.5a2 2 0 0 1 2.8 2.8l-1 1a2 2 0 0 1 0 2.8l-4 4a4 4 0 0 1-2.8 1.2h-2.5l-2 2.1m2.5-1.4-4.1-4.1m12.9-4.6-3.1-3.2m-.2 4.8-3.4-3.4m.3 5.1-2.9-3M3 7l2 .7M6 3l1.3 2"/></symbol>
+    <symbol id="hud-slap" viewBox="0 0 24 24"><path d="M8 12V6a1.5 1.5 0 0 1 3 0v4-6a1.5 1.5 0 0 1 3 0v6-4a1.5 1.5 0 0 1 3 0v5-2a1.5 1.5 0 0 1 3 0v6a6 6 0 0 1-6 6h-1a6 6 0 0 1-4.5-2l-4-4.5a1.6 1.6 0 0 1 2.3-2.2L8 14"/></symbol>
+    <symbol id="hud-kick" viewBox="0 0 24 24"><path d="M7 4h6l1.4 7 2.6 1.6h2a2 2 0 0 1 2 2V19H6a2 2 0 0 1-2-2v-3l3-3V4Zm-3 12h17M9 8h4m-4 3h5M2 9h2M2 6h2"/></symbol>
+    <symbol id="hud-puff" viewBox="0 0 24 24"><path d="M8 16a3 3 0 0 1-.3-6 4 4 0 0 1 7.6-1 3.6 3.6 0 1 1 2 7H8Zm-5-2h2m-3 4h7m3 2h4"/></symbol>
+  </svg>
+  <div class="character-actions" id="character-actions" role="group" aria-label="Explorer actions" hidden>
+    <button class="character-action moves-toggle" id="moves-toggle" type="button" aria-label="Moves" title="Moves" aria-expanded="false" aria-controls="move-picker">
+      <svg class="controller-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#hud-moves"/></svg>
+    </button>
+    <div class="move-picker" id="move-picker" role="group" aria-label="Equip an attack move" hidden>
+      <button class="move-option" type="button" data-move="punch" aria-pressed="true"><svg class="controller-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#hud-punch"/></svg>Punch</button>
+      <button class="move-option" type="button" data-move="slap" aria-pressed="false"><svg class="controller-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#hud-slap"/></svg>Slap</button>
+      <button class="move-option" type="button" data-move="kick" aria-pressed="false"><svg class="controller-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#hud-kick"/></svg>Kick</button>
+      <button class="move-option" type="button" data-move="puff" aria-pressed="false"><svg class="controller-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#hud-puff"/></svg>Puff</button>
+    </div>
+    <button class="character-action interaction-action" id="interaction-action" type="button" aria-label="Grab" aria-keyshortcuts="Q" disabled>
+      <svg class="controller-icon" viewBox="0 0 24 24" aria-hidden="true"><use id="interaction-icon" href="#hud-grab"/></svg>
+    </button>
+    <button class="character-action jump-action" id="jump-button" type="button" aria-label="Jump" aria-keyshortcuts="Space" title="Jump (Space)">
+      <svg class="controller-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#hud-jump"/></svg>
+    </button>
+    <button class="character-action attack-action" id="attack-button" type="button" data-move="punch" aria-keyshortcuts="J" aria-label="Attack with Punch" title="Punch (J)">
+      <svg class="controller-icon" viewBox="0 0 24 24" aria-hidden="true"><use id="attack-icon" href="#hud-punch"/></svg>
+    </button>
+  </div>
+  <div class="workout-panel" id="workout-panel" hidden>
+    <span id="workout-label" role="status"></span>
+    <progress id="workout-progress" aria-label="Exercise progress" max="1" hidden></progress>
+  </div>
+  <p class="sr-only" id="game-hint">Use arrow keys, W A S D, a tap destination, or the joystick to move. Jump with Space. Move toward a wall as you jump to cross it when there is room to land. Use Moves to equip an attack, or use Punch (J), Slap (F), Kick (K), and Puff (G) directly. Tap Kick four times quickly for a full kick. Face Dani to Grab (Q), then aim with movement and press Throw (Q). Use E to check a searchable prop or start or stop a gym exercise.</p>
   <p id="load-error" role="status" style="position:fixed;left:50%;top:50%;max-width:min(90vw,32rem);transform:translate(-50%,-50%);padding:1rem 1.2rem;border:1px solid #777;border-radius:12px;background:#292b33;color:#fff;font:14px/1.5 system-ui;text-align:center;display:none"></p>
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.90.0/dist/phaser.min.js" defer></script>
-  <script src="explorer-character.js?v=puff-frame-fix" defer></script>
-  <script src="game-webgl.js?v=puff" defer></script>
+  <script src="explorer-character.js?v=action-faces-smoke" defer></script>
+  <script src="room-walls.js" defer></script>
+  <script src="gym-equipment.js?v=shoulder-press" defer></script>
+  <script src="game-webgl.js?v=action-faces-smoke" defer></script>
 </body>
 </html>

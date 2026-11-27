@@ -44,107 +44,48 @@
     }));
   }
 
-  function joinedWallLine(wall) {
-    const points = [{ x: Number(wall.x1), y: Number(wall.y1) }, { x: Number(wall.x2), y: Number(wall.y2) }];
-    const wx = points[1].x - points[0].x; const wy = points[1].y - points[0].y;
-    const wallLength = Math.hypot(wx, wy) || 1;
-    wallSegments().forEach((other) => {
-      if (other === wall || (other.id && wall.id && other.id === wall.id)) return;
-      const ox = Number(other.x2) - Number(other.x1); const oy = Number(other.y2) - Number(other.y1);
-      const otherLength = Math.hypot(ox, oy) || 1;
-      const sinAngle = Math.abs((wx * oy - wy * ox) / (wallLength * otherLength));
-      if (sinAngle > .22 && Math.abs(sinAngle - 1) > .22) return;
-      const limit = ((Number(wall.width) || 26) + (Number(other.width) || 26)) / 2 + 3;
-      [0, 1].forEach((index) => {
-        const point = points[index];
-        const t = ((point.x - other.x1) * ox + (point.y - other.y1) * oy) / (otherLength * otherLength);
-        if (t < 0 || t > 1) return;
-        const projection = { x: Number(other.x1) + t * ox, y: Number(other.y1) + t * oy };
-        const distance = Math.hypot(point.x - projection.x, point.y - projection.y);
-        if (distance > limit) return;
-        const previous = point.distance ?? Infinity;
-        if (distance < previous) { points[index] = { ...projection, distance }; }
-      });
-    });
-    return { x1: points[0].x, y1: points[0].y, x2: points[1].x, y2: points[1].y };
-  }
-
-  function renderWallArt(group, wall, width) {
-    const { x1, y1, x2, y2 } = joinedWallLine(wall);
-    const length = Math.hypot(x2 - x1, y2 - y1) || 1;
-    const nx = -(y2 - y1) / length; const ny = (x2 - x1) / length;
-    const base = wall.stroke || "#672b38";
-    const edge = wall.edgeStroke || state.map.style?.wallEdgeColor || "#d86a66";
-    const appendStroke = (stroke, strokeWidth, extra = {}) => group.append(createSvg("line", {
-      x1, y1, x2, y2, stroke, "stroke-width": strokeWidth, "stroke-linecap": "square", ...extra
-    }));
-    appendStroke("#17151b", width + 6);
-    appendStroke(base, width);
-    appendStroke("#17151b", Math.max(5, width * .42));
-    const offset = width * .29;
-    group.append(createSvg("line", {
-      x1: x1 + nx * offset, y1: y1 + ny * offset, x2: x2 + nx * offset, y2: y2 + ny * offset,
-      stroke: edge, "stroke-width": Math.max(1.5, width * .07), "stroke-linecap": "square", opacity: ".96"
-    }));
-  }
-
-  function createWallNode(wall) {
-    const width = Number(wall.width) || 26;
-    const group = createSvg("g", { class: `wall-segment${wall.id === state.selectedWallId ? " selected" : ""}`, "data-wall-root-id": wall.id });
-    renderWallArt(group, wall, width);
-    const hitLine = joinedWallLine(wall);
-    group.append(createSvg("line", { ...hitLine, stroke: "transparent", "stroke-width": width + 12, "stroke-linecap": "square", "pointer-events": "stroke", "data-wall-id": wall.id }));
-    const title = createSvg("title"); title.textContent = `Wall · ${Math.round(Math.hypot(hitLine.x2 - hitLine.x1, hitLine.y2 - hitLine.y1))} × ${Math.round(width)} units`;
-    group.append(title);
-    return group;
-  }
+  let drawnWalls = [];
 
   function renderWallLayer() {
-    ui.walls.replaceChildren(...wallSegments().map(createWallNode));
-    renderWallSelection(); renderWallInspector();
-  }
-
-  function connectedWallIds(target) {
-    const result = new Set([target.id]);
-    wallSegments().forEach((wall) => {
-      if (wall === target) return;
-      const touches = (source, other) => {
-        const sx = source.x2 - source.x1; const sy = source.y2 - source.y1;
-        const ox = other.x2 - other.x1; const oy = other.y2 - other.y1;
-        const sl = Math.hypot(sx, sy) || 1; const ol = Math.hypot(ox, oy) || 1;
-        const angle = Math.abs((sx * oy - sy * ox) / (sl * ol));
-        if (angle > .22 && Math.abs(angle - 1) > .22) return false;
-        const limit = ((Number(source.width) || 26) + (Number(other.width) || 26)) / 2 + 3;
-        return [[source.x1, source.y1], [source.x2, source.y2]].some(([px, py]) => {
-          const t = ((px - other.x1) * ox + (py - other.y1) * oy) / (ol * ol);
-          if (t < 0 || t > 1) return false;
-          return Math.hypot(px - (other.x1 + t * ox), py - (other.y1 + t * oy)) <= limit;
-        });
-      };
-      if (touches(target, wall) || touches(wall, target)) result.add(wall.id);
-    });
-    return result;
-  }
-
-  function refreshWallNodes(ids) {
-    ids.forEach((id) => {
-      const wall = wallSegments().find((item) => item.id === id);
-      const oldNode = [...ui.walls.children].find((node) => node.getAttribute("data-wall-root-id") === id);
-      if (!wall) { oldNode?.remove(); return; }
-      const newNode = createWallNode(wall);
-      if (oldNode) oldNode.replaceWith(newNode); else ui.walls.append(newNode);
-    });
-    renderWallSelection(); renderWallInspector();
+    drawnWalls = RoomscapeWalls.joinedSegments(wallSegments(), state.map.style?.wallWidth);
+    const fragment = document.createDocumentFragment();
+    for (const layer of RoomscapeWalls.layers) {
+      const paths = new Map();
+      for (const wall of drawnWalls) {
+        const stroke = layer.color(wall), width = layer.width(wall);
+        const key = `${stroke}/${width}`;
+        if (!paths.has(key)) paths.set(key, { stroke, width, commands: [] });
+        paths.get(key).commands.push(`M${wall.x1} ${wall.y1}L${wall.x2} ${wall.y2}`);
+      }
+      for (const { stroke, width, commands } of paths.values()) {
+        fragment.append(createSvg("path", {
+          d: commands.join(" "), fill: "none", stroke, "stroke-width": width, "stroke-linecap": "round"
+        }));
+      }
+    }
+    for (const { id, x1, y1, x2, y2, width } of drawnWalls) {
+      const line = createSvg("line", {
+        x1, y1, x2, y2, stroke: "transparent", "stroke-width": width + 12,
+        "stroke-linecap": "round", "pointer-events": "stroke", "data-wall-id": id
+      });
+      const title = createSvg("title");
+      title.textContent = `Wall · ${Math.round(Math.hypot(x2 - x1, y2 - y1))} × ${Math.round(width)} units`;
+      line.append(title);
+      fragment.append(line);
+    }
+    ui.walls.replaceChildren(fragment);
+    renderWallSelection();
+    renderWallInspector();
   }
 
   function renderWallSelection() {
     ui.selection.querySelectorAll(".wall-selection").forEach((node) => node.remove());
     const wall = selectedWall();
     if (!wall) return;
-    const joined = joinedWallLine(wall);
+    const { x1, y1, x2, y2 } = drawnWalls.find(({ id }) => id === wall.id) || wall;
     const group = createSvg("g", { class: "wall-selection", "pointer-events": "none" });
-    group.append(createSvg("line", { ...joined, class: "wall-selection-line", "pointer-events": "stroke", "data-wall-id": wall.id }));
-    [["start", joined.x1, joined.y1], ["end", joined.x2, joined.y2]].forEach(([endpoint, x, y]) => {
+    group.append(createSvg("line", { x1, y1, x2, y2, class: "wall-selection-line", "pointer-events": "stroke", "data-wall-id": wall.id }));
+    [["start", wall.x1, wall.y1], ["end", wall.x2, wall.y2]].forEach(([endpoint, x, y]) => {
       group.append(createSvg("circle", { cx: x, cy: y, r: 7, class: "wall-handle", "data-wall-handle": endpoint, "data-wall-id": wall.id, "pointer-events": "all" }));
     });
     ui.selection.append(group);
@@ -156,7 +97,7 @@
     ui.wallFields.hidden = !wall;
     ui.wallStatus.textContent = state.wallTool === "draw" ? "Click the map to place one wall block." : wall ? "Selected wall · drag it to move, or drag an end handle to reshape." : "Choose a wall or add a new one.";
     if (!wall) return;
-    const joined = joinedWallLine(wall);
+    const { x1, y1, x2, y2 } = drawnWalls.find(({ id }) => id === wall.id) || wall;
     ui.wallX1.value = Math.round(joined.x1); ui.wallY1.value = Math.round(joined.y1);
     ui.wallX2.value = Math.round(joined.x2); ui.wallY2.value = Math.round(joined.y2);
     ui.wallWidth.value = Math.round(wall.width || 26);
@@ -499,7 +440,7 @@
     if (wall) {
       const endpoint = wallHandle?.getAttribute("data-wall-handle");
       selectWall(wall.id);
-      state.drag = { pointerId: event.pointerId, mode: endpoint ? "wall-endpoint" : "wall-move", id: wall.id, endpoint, start: point, origin: { x1: wall.x1, y1: wall.y1, x2: wall.x2, y2: wall.y2 }, affectedIds: connectedWallIds(wall) };
+      state.drag = { pointerId: event.pointerId, mode: endpoint ? "wall-endpoint" : "wall-move", id: wall.id, endpoint, start: point, origin: { x1: wall.x1, y1: wall.y1, x2: wall.x2, y2: wall.y2 } };
       ui.map.setPointerCapture(event.pointerId); event.preventDefault(); return;
     }
     const colliderHandle = event.target.closest?.("[data-collider-index]");
@@ -526,8 +467,7 @@
         wall.x2 = snap(drag.origin.x2 + dx); wall.y2 = snap(drag.origin.y2 + dy);
       }
       syncWallData();
-      const affected = new Set([...drag.affectedIds, ...connectedWallIds(wall)]);
-      refreshWallNodes(affected); return;
+      renderWallLayer(); return;
     }
     const item = objectById(drag.id); if (!item) return;
     const point = mapPoint(event); const original = drag.origin;
@@ -565,10 +505,7 @@
     state.drag = null; dirty(wasWall ? "Unsaved wall changes" : "Unsaved changes");
     if (wasWall) {
       syncWallData();
-      const movedWall = wallSegments().find((wall) => wall.id === finishedDrag.id);
-      const affected = new Set(finishedDrag.affectedIds);
-      if (movedWall) connectedWallIds(movedWall).forEach((id) => affected.add(id));
-      refreshWallNodes(affected);
+      renderWallLayer();
     } else renderScene();
   }
   ui.map.addEventListener("pointerup", endDrag); ui.map.addEventListener("pointercancel", endDrag);
@@ -777,7 +714,7 @@
   }
 
   async function initialize() {
-    const [manifestResponse, mapResponse] = await Promise.all([fetch("assets/asset-manifest.json?v=colliders-20261002"), fetch("maps/room-01/map.json?v=colliders-20261002")]);
+    const [manifestResponse, mapResponse] = await Promise.all([fetch("assets/asset-manifest.json?v=colliders-20261002"), fetch("maps/room-01/map.json", { cache: "no-store" })]);
     if (!manifestResponse.ok || !mapResponse.ok) throw new Error("Could not load the asset catalog or room map.");
     const manifest = await manifestResponse.json();
     state.map = await mapResponse.json();
@@ -789,6 +726,7 @@
       });
       return { ...asset, width: asset.width || image.naturalWidth, height: asset.height || image.naturalHeight, url: asset.src };
     }));
+    state.assets.unshift(...RoomscapeGym.createAssets().map(({ canvas, ...asset }) => ({ ...asset, url: canvas.toDataURL() })));
     state.map.format = "roomscape-map";
     state.map.version = 1;
     state.map.objects ||= [];
